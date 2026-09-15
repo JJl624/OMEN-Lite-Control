@@ -10,6 +10,8 @@ A lightweight alternative to the resource-heavy OMEN Gaming Hub, made for the
 
 - Default, Performance, Cool and Eco modes
 - Four-zone static keyboard colors and brightness
+- Up to eight custom keyboard-lighting presets
+- Chinese and English interface
 - No background process, telemetry or automatic startup
 - No OMEN Gaming Hub, XTU or HP HSA runtime dependency
 
