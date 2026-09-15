@@ -30,9 +30,9 @@ the refresh rate, NVIDIA frame-rate limit and CPU boost settings.
 
 ## 中文
 
-这是为 **暗影精灵 4（i7-8750H + GTX 1060，主板 SSID 84DB）**制作的轻量控制工具。OMEN Gaming Hub 太重，而本机只需要性能调节和四分区键盘灯控制功能。
+这是为暗影精灵 4（i7-8750H + GTX 1060，主板 SSID 84DB）制作的轻量控制工具。OMEN Gaming Hub 功能太多，而本机只需要性能调节和四分区键盘灯控制功能。解压后请以**管理员身份**运行程序。
 
-本项目仍处于 Beta 阶段，目前只在上述机器上测试。请勿在其他型号上使用。
+本项目仍处于 Beta 阶段，目前只在上述机器上测试。请勿在其他型号上使用。删除前请先点击一次**默认**，以恢复屏幕刷新率、NVIDIA 帧率限制和 CPU 睿频设置。
 
 ## License
 
