@@ -6,7 +6,7 @@ A lightweight alternative to the resource-heavy OMEN Gaming Hub, made for the
 > Beta software. This project is hardware-specific and has only been tested on
 > the configuration above. Do not use it on other models.
 
-![OMEN-Lite-Control interface](assets/ui.png)
+<img src="assets/ui.png" alt="OMEN-Lite-Control interface" width="50%">
 
 ## Features
 
