@@ -1,0 +1,9 @@
+/dist/
+/deps/
+/*.user
+*.new.exe
+keyboard-color-backup.bin
+last-mode.txt
+normal-refresh-rate.txt
+normal-cpu-boost.txt
+normal-nvidia-fps.txt

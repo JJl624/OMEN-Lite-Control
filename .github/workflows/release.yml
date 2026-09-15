@@ -1,0 +1,42 @@
+name: Build and release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build
+        shell: powershell
+        run: ./scripts/build.ps1
+
+      - name: Package
+        shell: powershell
+        run: Compress-Archive -Path dist/* -DestinationPath OMEN-Lite-Control-${{ github.ref_name }}-win-x64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OMEN-Lite-Control-${{ github.ref_name }}-win-x64
+          path: OMEN-Lite-Control-${{ github.ref_name }}-win-x64.zip
+
+      - name: Create prerelease
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          generate_release_notes: true
+          files: OMEN-Lite-Control-${{ github.ref_name }}-win-x64.zip
