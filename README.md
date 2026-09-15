@@ -1,69 +1,40 @@
 # OMEN-Lite-Control
 
-> Beta software for **HP OMEN 15-dc0xxx with motherboard SSID 84DB only**.
+A lightweight alternative to the resource-heavy OMEN Gaming Hub, made for the
+**HP OMEN 15 (2018 / 暗影精灵 4), i7-8750H + GTX 1060, motherboard SSID 84DB**.
 
-A lightweight control tool for the HP OMEN 15-dc0xxx (84DB), providing
-performance modes, power-saving features, and four-zone keyboard lighting
-without running OMEN Gaming Hub.
+> Beta software. This project is hardware-specific and has only been tested on
+> the configuration above. Do not use it on other models.
 
 ## Features
 
-- Default, Performance and Cool BIOS thermal policies.
-- Eco mode with an approximately 60 Hz display mode, NVIDIA 60 FPS limit and
-  disabled CPU boost; previous values are restored when leaving Eco mode.
-- Independent static RGB color and intensity controls for four keyboard zones.
-- No background process, telemetry or automatic startup.
-
-## Important limitations
-
-- This build is hardware-specific. Do **not** use it on another motherboard.
-- The displayed performance mode is the last mode written by this tool. HP's
-  `0x1A` WMI command is write-only on this platform, so it is not a hardware
-  readback.
-- Display refresh rate is read live from Windows. Driver rounding may report
-  143 Hz for a nominal 144 Hz mode, or 59 Hz for a nominal 60 Hz mode.
-- Per-zone brightness is implemented by scaling RGB intensity. It does not
-  replace the keyboard's global hardware backlight level.
-- Administrator privileges are required for HP BIOS WMI writes.
-
-## Requirements
-
-- HP OMEN 15-dc0xxx, motherboard SSID `84DB`.
-- 64-bit Windows 10 or Windows 11 with .NET Framework 4.x.
-- NVIDIA display driver for the Eco-mode frame-rate limiter.
-
-OMEN Gaming Hub, XTU, HP HSA services and `HpReadHWData.sys` are not required at
-runtime.
+- Default, Performance, Cool and Eco modes
+- Four-zone static keyboard colors and brightness
+- No background process, telemetry or automatic startup
+- No OMEN Gaming Hub, XTU or HP HSA runtime dependency
 
 ## Usage
 
-Download the latest ZIP from Releases, extract the complete folder, and run
-`OMEN-Lite-Control.exe`. Keep `OmenNvApi.dll` beside the executable.
+Download the latest ZIP from [Releases](https://github.com/JJl624/OMEN-Lite-Control/releases),
+extract the complete folder, then run `OMEN-Lite-Control.exe` as administrator.
 
-Before shutting down or removing the tool while Eco mode is active, click
-**Default** once so the saved refresh-rate, frame-rate and CPU-boost settings
-can be restored.
+If Eco mode is active, select **Default** before deleting the program to restore
+the refresh rate, NVIDIA frame-rate limit and CPU boost settings.
 
-## Building
+## Notes
 
-Run from an x64 Visual Studio Developer PowerShell:
+- Performance mode display records the last mode selected by this tool because
+  this model does not expose hardware readback for that setting.
+- Windows may report 143/59 Hz for nominal 144/60 Hz display modes.
+- Keep `OmenNvApi.dll` beside the executable.
 
-```powershell
-./scripts/build.ps1
-```
+## 中文
 
-The script downloads the official NVIDIA NVAPI SDK and writes the build to
-`dist`. GitHub Actions uses the same script for tagged prereleases.
+这是为 **暗影精灵 4（i7-8750H + GTX 1060，主板 SSID 84DB）**制作的轻量控制工具。
+项目的动机很简单：OMEN Gaming Hub 太重，而本机只需要性能模式和四分区键盘灯控制。
 
-## 中文说明
-
-OMEN-Lite-Control 是为 **HP OMEN 15-dc0xxx（主板 SSID 84DB）**制作的轻量控制工具，
-无需运行 OMEN Gaming Hub，即可切换默认、狂暴、酷冷和节能模式，并控制四分区键盘
-静态颜色与 RGB 强度。
-
-本项目目前处于 Beta 阶段，只允许在上述型号使用。节能状态下退出或删除程序前，请先
-点击一次“默认”，以恢复刷新率、NVIDIA 限帧和 CPU 睿频设置。
+本项目仍处于 Beta 阶段，目前只在上述机器上测试。请勿在其他型号上使用。
 
 ## License
 
-MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MIT — see [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
