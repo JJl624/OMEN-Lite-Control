@@ -3,7 +3,7 @@ name: Build and release
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -15,28 +15,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
       - name: Build
         shell: powershell
-        run: ./scripts/build.ps1
+        run: ./build.ps1
 
-      - name: Package
+      - name: Test without hardware access
         shell: powershell
-        run: Compress-Archive -Path dist/* -DestinationPath OMEN-Lite-Control-${{ github.ref_name }}-win-x64.zip
+        run: ./tests/run.ps1
+
+      - name: Package and checksum
+        shell: powershell
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: |
+          $version = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:RELEASE_REF } else { 'snapshot' }
+          $zip = Join-Path $PWD "dist/OMEN-Lite-Control-$version-portable.zip"
+          ./package.ps1 -ZipPath $zip
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path -Leaf $zip)" | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding ASCII
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OMEN-Lite-Control-${{ github.ref_name }}-win-x64
-          path: OMEN-Lite-Control-${{ github.ref_name }}-win-x64.zip
+          name: OMEN-Lite-Control-${{ github.ref_name }}-portable
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
 
-      - name: Create prerelease
+      - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          prerelease: true
-          generate_release_notes: true
-          files: OMEN-Lite-Control-${{ github.ref_name }}-win-x64.zip
+          name: OMEN Lite Control ${{ github.ref_name }}
+          prerelease: false
+          body_path: docs/releases/${{ github.ref_name }}.md
+          files: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
