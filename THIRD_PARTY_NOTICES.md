@@ -1,4 +1,4 @@
-﻿# Third-party notices
+# Third-party notices
 
 ## PawnIO EC port module
 
@@ -25,12 +25,6 @@ No separate PawnIOLib DLL is needed by this application. The C# transport is ind
 The module remains an external replaceable file. Modified modules require the
 upstream project's appropriate signing/development setup; the application does
 not bypass stock PawnIO's signature enforcement.
-
-## Legacy NVIDIA recovery
-
-The optional OmenNvApi.dll helper uses the official [NVIDIA NVAPI SDK](https://github.com/NVIDIA/nvapi),
-under the MIT License. The runtime NVAPI implementation comes from the installed
-NVIDIA driver. It is used only to restore an old saved Eco frame-rate limit.
 
 ## Research
 

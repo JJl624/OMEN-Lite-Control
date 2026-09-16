@@ -1,6 +1,6 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$scratch = Join-Path $root 'work'
+$scratch = Join-Path ([IO.Path]::GetTempPath()) 'OMEN-Lite-Control-tests'
 New-Item -ItemType Directory -Path $scratch -Force | Out-Null
 $testExe = Join-Path $scratch 'EcReaderTests.exe'
 & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /platform:x64 `
