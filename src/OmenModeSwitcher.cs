@@ -11,9 +11,9 @@ using System.Windows.Forms;
 
 [assembly:AssemblyTitle("OMEN Lite Control")]
 [assembly:AssemblyDescription("Lightweight controls for HP OMEN 15-dc0xxx (84DB)")]
-[assembly:AssemblyVersion("0.4.1.0")]
-[assembly:AssemblyFileVersion("0.4.1.0")]
-[assembly:AssemblyInformationalVersion("0.4.1")]
+[assembly:AssemblyVersion("0.4.2.0")]
+[assembly:AssemblyFileVersion("0.4.2.0")]
+[assembly:AssemblyInformationalVersion("0.4.2")]
 namespace OmenModeSwitcher
 {
     static class HpBios
@@ -222,7 +222,9 @@ namespace OmenModeSwitcher
     sealed class MainForm : Form
     {
         Action renderMode;
-        bool english, zonesLoaded, installing, hardwareBusy;
+        bool english, installing, hardwareBusy, biosColorsLoaded, biosReadFailed;
+        readonly KeyboardPreset biosPreset =
+            new KeyboardPreset { Brightness = new[] { 100, 100, 100, 100 } };
         Label lastLabel, mode, ecDetails;
         ToolStripStatusLabel msg;
         ToolTip detailsTip = new ToolTip();
@@ -379,6 +381,7 @@ namespace OmenModeSwitcher
             deletePreset.Text = T("删除", "Delete");
             msg.ForeColor = SystemColors.ControlText;
             msg.Text = T("就绪", "Ready");
+            UpdateBiosPresetName();
             if (renderMode != null)
                 renderMode();
         }
@@ -446,23 +449,72 @@ namespace OmenModeSwitcher
             await RefreshMode();
             try
             {
-                byte[] d = await Task.Run(() => HpBios.GetColors());
-                if (!zonesLoaded)
-                {
-                    int n = Math.Min((int)d[0] + 1, 4);
-                    for (int i = 0; i < 4; i++)
-                    {
-                        int p = 25 + Math.Min(i, Math.Max(0, n - 1)) * 3;
-                        zoneColors[i] = Color.FromArgb(d[p], d[p + 1], d[p + 2]);
-                        PaintZone(i);
-                    }
-                    zonesLoaded = true;
-                }
+                await RefreshKeyboard(true);
             }
             catch (Exception e)
             {
                 Fail(e);
             }
+        }
+
+        void UpdateBiosPresetName()
+        {
+            string previous = biosPreset.Name;
+            biosPreset.Name = biosColorsLoaded ? T("当前 BIOS", "Current BIOS")
+                              : biosReadFailed ? T("BIOS · 读取失败", "BIOS · Read failed")
+                                               : T("BIOS · 未读取", "BIOS · Unread");
+            if (presetList.SelectedItem == biosPreset && presetName.Text == previous)
+                presetName.Text = biosPreset.Name;
+            presetList.Invalidate();
+        }
+
+        async Task RefreshKeyboard(bool updateEditor)
+        {
+            try
+            {
+                UpdateBiosColors(await Task.Run(() => HpBios.GetColors()), updateEditor);
+            }
+            catch
+            {
+                biosColorsLoaded = false;
+                biosReadFailed = true;
+                UpdateBiosPresetName();
+                throw;
+            }
+        }
+
+        void UpdateBiosColors(byte[] data, bool updateEditor)
+        {
+            if (data == null || data.Length != 128)
+                throw new InvalidDataException("Invalid BIOS keyboard color table.");
+            int count = Math.Min((int)data[0] + 1, 4);
+            for (int i = 0; i < 4; i++)
+            {
+                int offset = 25 + Math.Min(i, count - 1) * 3;
+                biosPreset.Colors[i] =
+                    Color.FromArgb(data[offset], data[offset + 1], data[offset + 2]);
+                // BIOS returns effective RGB, already scaled by any previously applied brightness.
+                biosPreset.Brightness[i] = 100;
+            }
+            biosColorsLoaded = true;
+            biosReadFailed = false;
+            UpdateBiosPresetName();
+            if (updateEditor)
+            {
+                ReloadPresetList(biosPreset);
+                LoadPresetColors(biosPreset);
+            }
+        }
+
+        void LoadPresetColors(KeyboardPreset preset)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                zoneColors[i] = preset.Colors[i];
+                zoneBrightness[i] = preset.Brightness[i];
+                PaintZone(i);
+            }
+            presetName.Text = preset.Name;
         }
 
         void ShowState(PerformanceState state)
@@ -692,7 +744,17 @@ namespace OmenModeSwitcher
                 Color[] colors = zoneColors.ToArray();
                 int[] brightness = zoneBrightness.ToArray();
                 await Task.Run(() => HpBios.SetZones(colors, brightness));
-                Ok(T("键盘灯已应用。", "Keyboard lighting applied."));
+                try
+                {
+                    await RefreshKeyboard(false);
+                    Ok(T("键盘灯已应用。", "Keyboard lighting applied."));
+                }
+                catch (Exception e)
+                {
+                    Warn(
+                        T("键盘灯已应用，但回读失败：", "Lighting applied, but readback failed: ") +
+                        e.Message);
+                }
             }
             catch (Exception e)
             {
@@ -710,12 +772,13 @@ namespace OmenModeSwitcher
                 return;
             var preset = (KeyboardPreset)presetList.Items[e.Index];
             e.DrawBackground();
-            var text =
-                new Rectangle(e.Bounds.X + 5, e.Bounds.Y, e.Bounds.Width - 78, e.Bounds.Height);
+            bool available = preset != biosPreset || biosColorsLoaded;
+            var text = new Rectangle(e.Bounds.X + 5, e.Bounds.Y,
+                                     e.Bounds.Width - (available ? 78 : 10), e.Bounds.Height);
             TextRenderer.DrawText(e.Graphics, preset.Name, Font, text, e.ForeColor,
                                   TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             int[] order = { 2, 3, 1, 0 };
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; available && i < 4; i++)
             {
                 int zone = order[i];
                 Color c = preset.Colors[zone];
@@ -736,6 +799,7 @@ namespace OmenModeSwitcher
             try
             {
                 presetList.Items.Clear();
+                presetList.Items.Add(biosPreset);
                 foreach (var preset in presets)
                     presetList.Items.Add(preset);
                 presetList.SelectedItem = selected;
@@ -744,7 +808,8 @@ namespace OmenModeSwitcher
             {
                 loadingPresets = false;
             }
-            savePreset.Enabled = deletePreset.Enabled = selected != null;
+            savePreset.Enabled = deletePreset.Enabled =
+                selected != null && presets.Contains(selected);
         }
 
         KeyboardPreset CapturePreset(string name)
@@ -756,7 +821,7 @@ namespace OmenModeSwitcher
         void SavePreset()
         {
             var selected = presetList.SelectedItem as KeyboardPreset;
-            if (selected == null)
+            if (selected == null || !presets.Contains(selected))
                 return;
             string name = presetName.Text.Replace("|", " ").Trim();
             if (String.IsNullOrWhiteSpace(name))
@@ -820,17 +885,15 @@ namespace OmenModeSwitcher
             if (loadingPresets)
                 return;
             var preset = presetList.SelectedItem as KeyboardPreset;
-            savePreset.Enabled = deletePreset.Enabled = preset != null;
+            savePreset.Enabled = deletePreset.Enabled = preset != null && presets.Contains(preset);
             if (preset == null)
                 return;
-            zonesLoaded = true;
-            for (int i = 0; i < 4; i++)
+            if (preset == biosPreset && !biosColorsLoaded)
             {
-                zoneColors[i] = preset.Colors[i];
-                zoneBrightness[i] = preset.Brightness[i];
-                PaintZone(i);
+                Warn(T("请刷新状态以读取键盘颜色。", "Refresh to read keyboard colors."));
+                return;
             }
-            presetName.Text = preset.Name;
+            LoadPresetColors(preset);
             msg.ForeColor = SystemColors.ControlText;
             msg.Text = T("预设已载入。", "Preset loaded.");
         }
@@ -838,7 +901,7 @@ namespace OmenModeSwitcher
         void DeletePreset()
         {
             var selected = presetList.SelectedItem as KeyboardPreset;
-            if (selected == null)
+            if (selected == null || !presets.Contains(selected))
                 return;
             try
             {

@@ -45,13 +45,11 @@ jobs:
           name: OMEN Lite Control ${{ github.ref_name }}
           prerelease: false
           body: |
-            - 标题栏显示版本号。
-            - 合并许可说明，更新内容移至 Releases。
-            - 运行包移除第三方源码压缩包，源码由发行页单独提供。
+            - 刷新状态时同步更新四分区键盘颜色。
+            - 预设列表首项固定显示当前 BIOS 颜色，支持载入和另存；应用灯光后自动回读更新。
 
-            - Show the version in the title bar.
-            - Consolidate license notices and move release notes to Releases.
-            - Remove the dependency source archive from the portable package; source remains available on the release page.
+            - Refresh synchronizes the four-zone keyboard colors with BIOS.
+            - Pin current BIOS colors first in the preset list, with load and save-as support; applying lighting also updates the readback.
           files: |
             dist/*.zip
             dist/SHA256SUMS.txt
