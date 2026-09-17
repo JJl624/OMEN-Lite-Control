@@ -28,18 +28,18 @@ try {
         $archive = New-Object IO.Compression.ZipArchive($stream, [IO.Compression.ZipArchiveMode]::Create)
         try {
             # Exact allowlist: no directory-wide copies of application or development files.
-            foreach ($name in @('OMEN-Lite-Control.exe','ec/LpcACPIEC.bin','driver/PawnIO_setup.exe','LICENSE')) {
+            foreach ($name in @('OMEN-Lite-Control.exe','driver/PawnIO_setup.exe','LICENSE')) {
                 Add-File $archive (Join-Path $PSScriptRoot $name) $name
             }
             $usage = @'
 OMEN Lite Control — HP 84DB / BIOS F.19
 
 完整解压，以管理员身份运行 OMEN-Lite-Control.exe。
-首次回读性能状态时，按界面提示安装驱动。保留 ec 和 driver 文件夹。
+首次回读性能状态时，按界面提示安装驱动。保留 driver 文件夹。
 键盘选色后点击应用；设置自动保存在 data 文件夹。
 
 Extract all files and run OMEN-Lite-Control.exe as administrator.
-Install the driver from the app when prompted for mode readback. Keep ec and driver.
+Install the driver from the app when prompted for mode readback. Keep the driver folder.
 Choose keyboard colors, then click Apply. Settings are saved in data.
 
 Third-party source and licenses: THIRD-PARTY.zip

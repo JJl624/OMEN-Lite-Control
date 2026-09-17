@@ -36,7 +36,7 @@ namespace OmenModeSwitcher
     }
 
     // Own transport implementation of the documented PawnIO device ABI.
-    // The separately shipped, signed LpcACPIEC module permits only ports 62/66.
+    // The embedded, signed LpcACPIEC module permits only ports 62/66.
     internal interface IEcPorts : IDisposable
     {
         byte Read(ushort port);
@@ -104,8 +104,19 @@ namespace OmenModeSwitcher
             }
             try
             {
-                byte[] module = File.ReadAllBytes(
-                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ec", "LpcACPIEC.bin"));
+                byte[] module;
+                using (var resource =
+                           typeof(PawnEcPorts)
+                               .Assembly.GetManifestResourceStream("OmenLiteControl.LpcACPIEC.bin"))
+                {
+                    if (resource == null)
+                        throw new InvalidDataException("Embedded EC module is missing.");
+                    using (var data = new MemoryStream())
+                    {
+                        resource.CopyTo(data);
+                        module = data.ToArray();
+                    }
+                }
                 if (module.Length == 0 || module.Length > 65536)
                     throw new InvalidDataException("Invalid EC module size.");
                 Call(LoadModule, module, 0);

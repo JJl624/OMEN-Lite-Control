@@ -11,9 +11,9 @@ using System.Windows.Forms;
 
 [assembly:AssemblyTitle("OMEN Lite Control")]
 [assembly:AssemblyDescription("Lightweight controls for HP OMEN 15-dc0xxx (84DB)")]
-[assembly:AssemblyVersion("0.3.1.0")]
-[assembly:AssemblyFileVersion("0.3.1.0")]
-[assembly:AssemblyInformationalVersion("0.3.1")]
+[assembly:AssemblyVersion("0.4.0.0")]
+[assembly:AssemblyFileVersion("0.4.0.0")]
+[assembly:AssemblyInformationalVersion("0.4.0")]
 namespace OmenModeSwitcher
 {
     static class HpBios
@@ -152,12 +152,12 @@ namespace OmenModeSwitcher
             return (s ?? "").Replace("|", " ").Replace("\r", " ").Replace("\n", " ").Trim();
         }
 
-        public static List<KeyboardPreset> Load()
+        public static List<KeyboardPreset> Load(bool english = false)
         {
             var list = new List<KeyboardPreset>();
-            if (!File.Exists(PathName))
-                return list;
-            foreach (string line in File.ReadAllLines(PathName, Encoding.UTF8))
+            string[] stored =
+                File.Exists(PathName) ? File.ReadAllLines(PathName, Encoding.UTF8) : new string[0];
+            foreach (string line in stored)
             {
                 string[] p = line.Split('|');
                 if (p.Length != 9 || String.IsNullOrWhiteSpace(p[0]))
@@ -170,59 +170,75 @@ namespace OmenModeSwitcher
                     ok &= Int32.TryParse(p[1 + i * 2], out rgb) &&
                           Int32.TryParse(p[2 + i * 2], out b) && rgb >= 0 && rgb <= 0xFFFFFF &&
                           b >= 0 && b <= 100;
-                    x.Colors[i] = Color.FromArgb(Math.Max(0, Math.Min(0xFFFFFF, rgb)));
+                    x.Colors[i] =
+                        Color.FromArgb(255, Color.FromArgb(Math.Max(0, Math.Min(0xFFFFFF, rgb))));
                     x.Brightness[i] = Math.Max(0, Math.Min(100, b));
                 }
-                if (ok && list.Count < 8)
+                if (ok)
                     list.Add(x);
+            }
+            // Seed once, including upgrades. The header survives an empty list so deleted defaults
+            // stay deleted.
+            if (!stored.Contains("# presets-v2"))
+            {
+                string[] names = english
+                                     ? new[] { "All White", "All Red", "All Blue", "All Purple" }
+                                     : new[] { "全部白色", "全部红色", "全部蓝色", "全部紫色" };
+                Color[] colors = { Color.White, Color.FromArgb(220, 0, 0),
+                                   Color.FromArgb(0, 90, 255), Color.FromArgb(145, 30, 210) };
+                for (int i = 0; i < colors.Length; i++)
+                {
+                    string name = names[i];
+                    for (int suffix = 2; list.Any(
+                             x => String.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
+                         suffix++)
+                        name = names[i] + " " + suffix;
+                    list.Add(
+                        new KeyboardPreset { Name = name,
+                                             Colors = Enumerable.Repeat(colors[i], 4).ToArray(),
+                                             Brightness = new[] { 100, 100, 100, 100 } });
+                }
+                Save(list);
             }
             return list;
         }
 
         public static void Save(List<KeyboardPreset> list)
         {
-            var lines = list.Take(8).Select(
+            var lines = list.Select(
                 x => Clean(x.Name) + "|" +
                      String.Join("|", Enumerable.Range(0, 4).SelectMany(
                                           i => new[] { (x.Colors[i].ToArgb() & 0xFFFFFF).ToString(),
                                                        x.Brightness[i].ToString() })));
-            File.WriteAllLines(PathName, lines, Encoding.UTF8);
-        }
-    }
-
-    static class StatusReader
-    {
-        public static string Colors(byte[] d, string[] z)
-        {
-            int n = Math.Min((int)d[0] + 1, 4);
-            string[] a = new string[n];
-            for (int i = 0; i < n; i++)
-            {
-                int p = 25 + i * 3;
-                a[i] = z[i] + " #" + d[p].ToString("X2") + d[p + 1].ToString("X2") +
-                       d[p + 2].ToString("X2");
-            }
-            return string.Join("  ", a);
+            string path = PathName, temp = path + ".tmp";
+            File.WriteAllLines(temp, new[] { "# presets-v2" }.Concat(lines), Encoding.UTF8);
+            if (File.Exists(path))
+                File.Replace(temp, path, null);
+            else
+                File.Move(temp, path);
         }
     }
 
     sealed class MainForm : Form
     {
         Action renderMode;
-        byte[] displayedColors;
-        string colorError;
-        bool colorsWritten;
         bool english, zonesLoaded, installing, hardwareBusy;
-        Label title, lastLabel, mode, color, msg, ecDetails;
+        Label lastLabel, mode, ecDetails;
+        ToolStripStatusLabel msg;
+        ToolTip detailsTip = new ToolTip();
         GroupBox modeBox, kb;
-        Button enableDriver, refresh, def, perf, cool, white, red, blue, purple, apply, savePreset,
-            deletePreset, language;
+        Button enableDriver, refresh, def, perf, cool, newPreset, apply, savePreset, deletePreset,
+            language;
         TextBox presetName;
-        ComboBox presetList;
+        ListBox presetList;
+        bool loadingPresets;
         Color[] zoneColors = new Color[4];
-        TrackBar[] zoneBrightness = new TrackBar[4];
-        Button[] zoneButtons = new Button[4];
-        Label[] zoneLabels = new Label[4], zonePercent = new Label[4];
+        int[] zoneBrightness = { 100, 100, 100, 100 };
+        KeyboardLightingControl keyboard;
+        TrackBar brightnessEditor;
+        Button colorEditor;
+        Label brightnessPercent;
+        bool updatingEditor;
         List<KeyboardPreset> presets;
 
         string T(string zh, string en)
@@ -240,70 +256,75 @@ namespace OmenModeSwitcher
         {
             string lf = UserData.File("language.txt");
             english = File.Exists(lf) && File.ReadAllText(lf).Trim() == "en";
-            presets = PresetStore.Load();
+            presets = PresetStore.Load(english);
             Font = new Font("Microsoft YaHei UI", 9.5F);
-            ClientSize = new Size(650, 710);
+            ClientSize = new Size(650, 650);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            title = L("", 20, 6, 500, 48);
-            title.Font = new Font(Font.FontFamily, 16F, FontStyle.Bold);
-            language = B("", 535, 14, 88, 30);
+            language = B("", 535, 12, 88, 30);
             language.Click += (s, e) => SwitchLanguage();
-            lastLabel = L("", 22, 65, 175, 26);
-            mode = L("", 200, 65, 285, 26);
-            refresh = B("", 518, 61, 105, 32);
+            lastLabel = L("", 22, 15, 175, 28);
+            mode = L("", 200, 15, 190, 28);
+            mode.Font = new Font(Font, FontStyle.Bold);
+            refresh = B("", 415, 12, 105, 32);
             refresh.Click += (s, e) => RefreshAll();
-            ecDetails = L("", 22, 96, 601, 32);
-            enableDriver = B("", 388, 96, 235, 32);
+            ecDetails = L("", 22, 52, 601, 48);
+            enableDriver = B("", 388, 61, 235, 32);
             enableDriver.Visible = false;
             enableDriver.Click += (s, e) => InstallDriver();
-            modeBox = G("", 20, 135, 610, 105);
-            def = B("", 18, 30, 180, 48, modeBox);
-            perf = B("", 213, 30, 180, 48, modeBox);
-            cool = B("", 408, 30, 180, 48, modeBox);
+            modeBox = G("", 20, 108, 610, 92);
+            def = B("", 18, 27, 180, 46, modeBox);
+            perf = B("", 213, 27, 180, 46, modeBox);
+            cool = B("", 408, 27, 180, 46, modeBox);
             def.Click += (s, e) => Mode(0);
             perf.Click += (s, e) => Mode(1);
             cool.Click += (s, e) => Mode(2);
-            kb = G("", 20, 250, 610, 365);
-            for (int i = 0; i < 4; i++)
+            kb = G("", 20, 210, 610, 407);
+            keyboard = new KeyboardLightingControl();
+            keyboard.SetBounds(15, 26, 575, 190);
+            keyboard.ZoneSelected += (sender, args) => UpdateZoneEditor();
+            keyboard.ZoneActivated += (sender, args) => PickZone(keyboard.SelectedZone);
+            kb.Controls.Add(keyboard);
+            colorEditor = B("", 15, 228, 170, 32, kb);
+            colorEditor.Click += (sender, args) => PickZone(keyboard.SelectedZone);
+            brightnessEditor =
+                new TrackBar { Minimum = 0, Maximum = 100, TickFrequency = 10, Value = 100 };
+            brightnessEditor.SetBounds(195, 224, 205, 40);
+            kb.Controls.Add(brightnessEditor);
+            brightnessPercent = L("100%", 402, 228, 65, 30, kb);
+            brightnessEditor.ValueChanged += (sender, args) =>
             {
-                int k = i, y = 27 + i * 47;
-                zoneLabels[i] = L("", 15, y, 62, 32, kb);
-                zoneButtons[i] = B("", 80, y, 115, 32, kb);
-                zoneButtons[i].Click += (s, e) => PickZone(k);
-                zoneBrightness[i] =
-                    new TrackBar { Minimum = 0, Maximum = 100, TickFrequency = 10, Value = 100 };
-                zoneBrightness[i].SetBounds(210, y - 2, 285, 40);
-                kb.Controls.Add(zoneBrightness[i]);
-                zonePercent[i] = L("100%", 505, y, 55, 32, kb);
-                zoneBrightness[i].ValueChanged += (s, e) => zonePercent[k].Text =
-                    zoneBrightness[k].Value + "%";
-            }
-            color = L("", 15, 207, 575, 25, kb);
-            white = B("", 15, 240, 100, 34, kb);
-            red = B("", 125, 240, 100, 34, kb);
-            blue = B("", 235, 240, 100, 34, kb);
-            purple = B("", 345, 240, 100, 34, kb);
-            apply = B("", 475, 236, 115, 42, kb);
-            white.Click += (s, e) => AllColor(Color.White);
-            red.Click += (s, e) => AllColor(Color.FromArgb(220, 0, 0));
-            blue.Click += (s, e) => AllColor(Color.FromArgb(0, 90, 255));
-            purple.Click += (s, e) => AllColor(Color.FromArgb(145, 30, 210));
-            apply.Click += (s, e) => ApplyZones();
-            presetName = new TextBox();
-            presetName.SetBounds(15, 293, 140, 28);
-            kb.Controls.Add(presetName);
-            presetList = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
-            presetList.SetBounds(165, 293, 190, 28);
+                if (updatingEditor)
+                    return;
+                int zone = keyboard.SelectedZone;
+                zoneBrightness[zone] = brightnessEditor.Value;
+                PaintZone(zone);
+            };
+            apply = B("", 475, 224, 115, 38, kb);
+            apply.Click += (sender, args) => ApplyZones();
+            presetList = new ListBox { DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 27,
+                                       IntegralHeight = false };
+            presetList.SetBounds(15, 280, 220, 114);
+            presetList.DrawItem += DrawPreset;
             kb.Controls.Add(presetList);
-            savePreset = B("", 365, 290, 105, 34, kb);
-            deletePreset = B("", 480, 290, 110, 34, kb);
-            presetList.SelectedIndexChanged += (s, e) => ShowPreset();
-            savePreset.Click += (s, e) => SavePreset();
-            deletePreset.Click += (s, e) => DeletePreset();
-            msg = L("", 20, 628, 610, 68);
-            msg.TextAlign = ContentAlignment.MiddleCenter;
+            presetName = new TextBox();
+            presetName.SetBounds(250, 280, 340, 28);
+            kb.Controls.Add(presetName);
+            savePreset = B("", 250, 322, 105, 34, kb);
+            newPreset = B("", 367, 322, 105, 34, kb);
+            deletePreset = B("", 484, 322, 106, 34, kb);
+            presetList.SelectedIndexChanged += (sender, args) => ShowPreset();
+            savePreset.Click += (sender, args) => SavePreset();
+            newPreset.Click += (sender, args) => NewPreset();
+            deletePreset.Click += (sender, args) => DeletePreset();
+            var statusBar = new StatusStrip { SizingGrip = false, ShowItemToolTips = true };
+            msg = new ToolStripStatusLabel { Spring = true, TextAlign = ContentAlignment.MiddleLeft,
+                                             AutoToolTip = false };
+            msg.TextChanged += (sender, args) => msg.ToolTipText = msg.Text;
+            statusBar.Items.Add(msg);
+            Controls.Add(statusBar);
+            FormClosed += (sender, args) => detailsTip.Dispose();
             ApplyLanguage();
             ReloadPresetList();
             RefreshAll();
@@ -337,39 +358,29 @@ namespace OmenModeSwitcher
         void ApplyLanguage()
         {
             Text = T("OMEN 独立控制器", "OMEN Lite Control");
-            title.Text = T("OMEN 独立性能与键盘控制", "OMEN Performance & Lighting Control");
             language.Text = english ? "中文" : "English";
-            lastLabel.Text = T("硬件当前模式 (EC)：", "Current mode (EC):");
+            lastLabel.Text = T("当前模式 · EC 回读", "Mode · EC readback");
             refresh.Text = T("刷新状态", "Refresh");
-            modeBox.Text =
-                T("本机 HP BIOS 性能策略（84DB 专用）", "HP BIOS Performance Control (84DB only)");
+            modeBox.Text = T("BIOS 性能策略", "BIOS Performance Policy");
             def.Text = T("默认", "Balanced");
-            perf.Text = T("狂暴 / 性能", "Performance");
+            perf.Text = T("狂暴", "Performance");
             cool.Text = T("酷冷", "Comfort");
-            kb.Text = T("键盘四分区静态颜色与亮度（RGB 强度）",
-                        "4-Zone Keyboard Lighting (static RGB intensity)");
-            string[] z = Zones();
-            for (int i = 0; i < 4; i++)
-            {
-                zoneLabels[i].Text = z[i];
-                zoneButtons[i].Text = T("选择颜色", "Choose Color");
-            }
-            white.Text = T("全部白色", "All White");
-            red.Text = T("全部红色", "All Red");
-            blue.Text = T("全部蓝色", "All Blue");
-            purple.Text = T("全部紫色", "All Purple");
+            kb.Text = T("键盘四分区示意 · 点击选区，双击选色",
+                        "4-Zone keyboard · Click to select, double-click for color");
+            keyboard.SetNames(Zones());
+            UpdateZoneEditor();
             apply.Text = T("应用", "Apply");
             presetName.Text = (String.IsNullOrWhiteSpace(presetName.Text) ||
                                presetName.Text == "预设名称" || presetName.Text == "Preset name")
                                   ? T("预设名称", "Preset name")
                                   : presetName.Text;
-            savePreset.Text = T("保存预设", "Save Preset");
-            deletePreset.Text = T("删除预设", "Delete Preset");
-            msg.Text = T("完全独立：不加载、不启动、不连接 OMEN Gaming Hub。",
-                         "Independent: OMEN Gaming Hub is not loaded, started or contacted.");
+            savePreset.Text = T("保存修改", "Save changes");
+            newPreset.Text = T("另存新预设", "Save as new");
+            deletePreset.Text = T("删除", "Delete");
+            msg.ForeColor = SystemColors.ControlText;
+            msg.Text = T("就绪", "Ready");
             if (renderMode != null)
                 renderMode();
-            RenderColors();
         }
 
         void SwitchLanguage()
@@ -383,8 +394,8 @@ namespace OmenModeSwitcher
         {
             if (id == "balanced" || id == "默认模式")
                 return T("默认模式", "Balanced");
-            if (id == "performance" || id == "狂暴 / 性能模式")
-                return T("狂暴 / 性能模式", "Performance");
+            if (id == "performance" || id == "狂暴模式")
+                return T("狂暴模式", "Performance");
             if (id == "comfort" || id == "酷冷模式")
                 return T("酷冷模式", "Comfort");
             return T("未知 / 标志冲突", "Unknown / conflicting flags");
@@ -436,10 +447,6 @@ namespace OmenModeSwitcher
             try
             {
                 byte[] d = await Task.Run(() => HpBios.GetColors());
-                displayedColors = d;
-                colorsWritten = false;
-                colorError = null;
-                RenderColors();
                 if (!zonesLoaded)
                 {
                     int n = Math.Min((int)d[0] + 1, 4);
@@ -454,9 +461,7 @@ namespace OmenModeSwitcher
             }
             catch (Exception e)
             {
-                displayedColors = null;
-                colorError = e.Message;
-                RenderColors();
+                Fail(e);
             }
         }
 
@@ -467,13 +472,25 @@ namespace OmenModeSwitcher
             ecDetails.Width = 601;
             mode.Text = ModeName(state.Id);
             mode.ForeColor = state.Mode < 0 ? Color.DarkOrange : SystemColors.ControlText;
-            ecDetails.Text = state.Raw;
+            string performance = (state.F8 & 2) != 0 ? T("开启", "On") : T("关闭", "Off");
+            string comfort = (state.EC & 1) != 0 ? T("开启", "On") : T("关闭", "Off");
+            ecDetails.ForeColor = SystemColors.GrayText;
+            ecDetails.Text = T("狂暴标志：", "Performance flag: ") + performance +
+                             "    ·    F8 bit 1 = " + ((state.F8 >> 1) & 1) + "    ·    0x" +
+                             state.F8.ToString("X2") + Environment.NewLine +
+                             T("酷冷标志：", "Comfort flag: ") + comfort +
+                             "    ·    EC bit 0 = " + (state.EC & 1) + "    ·    0x" +
+                             state.EC.ToString("X2");
+            detailsTip.SetToolTip(
+                ecDetails,
+                T("从嵌入式控制器回读的 BIOS 模式标志。F8、EC 是寄存器地址，十六进制数为完整原值。",
+                  "BIOS mode flags read from the embedded controller. F8 and EC are register addresses; hex numbers show the full raw values."));
         }
 
         void RenderDriverState(DriverState state)
         {
             renderMode = () => RenderDriverState(state);
-            mode.Text = T("未知（无法回读）", "Unknown (read unavailable)");
+            mode.Text = T("未知（无法回读）", "Readback unavailable");
             mode.ForeColor = Color.DarkOrange;
             enableDriver.Visible =
                 state == DriverState.Missing || state == DriverState.UpdateRequired;
@@ -482,6 +499,8 @@ namespace OmenModeSwitcher
                     ? T("更新硬件读取驱动", "Update readback driver")
                     : T("启用硬件读取（安装驱动）", "Enable readback (install driver)");
             ecDetails.Width = enableDriver.Visible ? 356 : 601;
+            ecDetails.ForeColor = SystemColors.GrayText;
+            detailsTip.SetToolTip(ecDetails, null);
             ecDetails.Text =
                 state == DriverState.Missing ? T("未安装读取组件；模式切换和键盘灯仍可用。",
                                                  "Driver needed for readback. Controls still work.")
@@ -515,11 +534,13 @@ namespace OmenModeSwitcher
         void RenderReadFailure(Exception e)
         {
             renderMode = () => RenderReadFailure(e);
-            mode.Text = T("未知（无法回读）", "Unknown (read unavailable)");
+            mode.Text = T("未知（无法回读）", "Readback unavailable");
             mode.ForeColor = Color.DarkOrange;
             enableDriver.Visible = false;
             ecDetails.Width = 601;
-            ecDetails.Text = e.Message;
+            ecDetails.Text = T("模式回读失败", "Mode readback failed");
+            detailsTip.SetToolTip(ecDetails, e.Message);
+            Fail(e);
         }
 
         void ShowReadFailure(Exception e)
@@ -536,19 +557,6 @@ namespace OmenModeSwitcher
             catch
             {
             }
-        }
-
-        void RenderColors()
-        {
-            if (displayedColors != null)
-                color.Text = (colorsWritten ? T("已写入色值：", "Written colors: ")
-                                            : T("当前色值：", "Current colors: ")) +
-                             StatusReader.Colors(displayedColors, Zones());
-            else
-                color.Text = colorError == null
-                                 ? T("当前色值：尚未读取", "Current colors: not read yet")
-                                 : T("当前色值：读取失败（", "Current colors: read failed (") +
-                                       colorError + ")";
         }
 
         async void InstallDriver()
@@ -639,9 +647,29 @@ namespace OmenModeSwitcher
 
         void PaintZone(int i)
         {
-            zoneButtons[i].BackColor = zoneColors[i];
-            zoneButtons[i].ForeColor =
-                zoneColors[i].GetBrightness() < 0.45f ? Color.White : Color.Black;
+            keyboard.SetZone(i, zoneColors[i], zoneBrightness[i]);
+            if (keyboard.SelectedZone == i)
+                UpdateZoneEditor();
+        }
+
+        void UpdateZoneEditor()
+        {
+            int zone = keyboard.SelectedZone;
+            updatingEditor = true;
+            try
+            {
+                brightnessEditor.Value = zoneBrightness[zone];
+            }
+            finally
+            {
+                updatingEditor = false;
+            }
+            brightnessPercent.Text = zoneBrightness[zone] + "%";
+            brightnessEditor.AccessibleName = Zones() [zone] + T("亮度", " brightness");
+            colorEditor.Text = Zones() [zone] + T(" · 选择颜色", " · Color");
+            colorEditor.BackColor = zoneColors[zone];
+            colorEditor.ForeColor =
+                zoneColors[zone].GetBrightness() < 0.45f ? Color.White : Color.Black;
         }
 
         void PickZone(int i)
@@ -655,15 +683,6 @@ namespace OmenModeSwitcher
             }
         }
 
-        void AllColor(Color c)
-        {
-            for (int i = 0; i < 4; i++)
-            {
-                zoneColors[i] = c;
-                PaintZone(i);
-            }
-        }
-
         async void ApplyZones()
         {
             if (!BeginHardwareOperation())
@@ -671,13 +690,9 @@ namespace OmenModeSwitcher
             try
             {
                 Color[] colors = zoneColors.ToArray();
-                int[] brightness = zoneBrightness.Select(x => x.Value).ToArray();
-                displayedColors = await Task.Run(() => HpBios.SetZones(colors, brightness));
-                colorsWritten = true;
-                colorError = null;
-                RenderColors();
-                Ok(T("四个分区的颜色和亮度已写入 BIOS 色表。",
-                     "Four-zone colors and brightness were written to the BIOS color table."));
+                int[] brightness = zoneBrightness.ToArray();
+                await Task.Run(() => HpBios.SetZones(colors, brightness));
+                Ok(T("键盘灯已应用。", "Keyboard lighting applied."));
             }
             catch (Exception e)
             {
@@ -689,74 +704,156 @@ namespace OmenModeSwitcher
             }
         }
 
-        void ReloadPresetList()
+        void DrawPreset(object sender, DrawItemEventArgs e)
         {
-            int old = presetList.SelectedIndex;
-            presetList.Items.Clear();
-            foreach (var p in presets)
-                presetList.Items.Add(p);
-            if (presetList.Items.Count > 0)
-                presetList.SelectedIndex = Math.Min(Math.Max(old, 0), presetList.Items.Count - 1);
+            if (e.Index < 0)
+                return;
+            var preset = (KeyboardPreset)presetList.Items[e.Index];
+            e.DrawBackground();
+            var text =
+                new Rectangle(e.Bounds.X + 5, e.Bounds.Y, e.Bounds.Width - 78, e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, preset.Name, Font, text, e.ForeColor,
+                                  TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+            int[] order = { 2, 3, 1, 0 };
+            for (int i = 0; i < 4; i++)
+            {
+                int zone = order[i];
+                Color c = preset.Colors[zone];
+                double level = preset.Brightness[zone] / 100.0;
+                using (var brush = new SolidBrush(Color.FromArgb(
+                           (int)(c.R * level), (int)(c.G * level), (int)(c.B * level))))
+                    e.Graphics.FillRectangle(brush, e.Bounds.Right - 70 + i * 16, e.Bounds.Y + 7,
+                                             13, 13);
+                e.Graphics.DrawRectangle(Pens.Gray, e.Bounds.Right - 70 + i * 16, e.Bounds.Y + 7,
+                                         13, 13);
+            }
+            e.DrawFocusRectangle();
+        }
+
+        void ReloadPresetList(KeyboardPreset selected = null)
+        {
+            loadingPresets = true;
+            try
+            {
+                presetList.Items.Clear();
+                foreach (var preset in presets)
+                    presetList.Items.Add(preset);
+                presetList.SelectedItem = selected;
+            }
+            finally
+            {
+                loadingPresets = false;
+            }
+            savePreset.Enabled = deletePreset.Enabled = selected != null;
+        }
+
+        KeyboardPreset CapturePreset(string name)
+        {
+            return new KeyboardPreset { Name = name, Colors = zoneColors.ToArray(),
+                                        Brightness = zoneBrightness.ToArray() };
         }
 
         void SavePreset()
         {
-            string name = presetName.Text.Trim();
-            if (String.IsNullOrWhiteSpace(name) || name == "预设名称" || name == "Preset name")
+            var selected = presetList.SelectedItem as KeyboardPreset;
+            if (selected == null)
+                return;
+            string name = presetName.Text.Replace("|", " ").Trim();
+            if (String.IsNullOrWhiteSpace(name))
             {
                 Warn(T("请输入预设名称。", "Enter a preset name."));
                 return;
             }
-            int index = presets.FindIndex(
-                x => String.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (index < 0 && presets.Count >= 8)
+            if (presets.Any(p => p != selected &&
+                                 String.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
             {
-                Warn(T("最多只能保存 8 个预设。", "A maximum of 8 presets can be saved."));
+                Warn(T("已有同名预设。", "A preset with this name already exists."));
                 return;
             }
-            var p =
-                new KeyboardPreset { Name = name, Colors = zoneColors.ToArray(),
-                                     Brightness = zoneBrightness.Select(x => x.Value).ToArray() };
-            if (index >= 0)
-                presets[index] = p;
-            else
-                presets.Add(p);
-            PresetStore.Save(presets);
-            ReloadPresetList();
-            presetList.SelectedItem =
-                presets.First(x => String.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
-            Ok(T("预设已保存：", "Preset saved: ") + name);
+            try
+            {
+                var updated = CapturePreset(name);
+                var next = new List<KeyboardPreset>(presets);
+                next[next.IndexOf(selected)] = updated;
+                PresetStore.Save(next);
+                presets = next;
+                ReloadPresetList(updated);
+                Ok(T("预设已保存：", "Preset saved: ") + name);
+            }
+            catch (Exception e)
+            {
+                Fail(e);
+            }
+        }
+
+        void NewPreset()
+        {
+            string root = presetName.Text.Replace("|", " ").Trim();
+            if (String.IsNullOrWhiteSpace(root) || root == "预设名称" || root == "Preset name")
+                root = T("新预设", "New preset");
+            string name = root;
+            for (int suffix = 2;
+                 presets.Any(p => String.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+                 suffix++)
+                name = root + " " + suffix;
+            try
+            {
+                var added = CapturePreset(name);
+                var next = new List<KeyboardPreset>(presets);
+                next.Add(added);
+                PresetStore.Save(next);
+                presets = next;
+                ReloadPresetList(added);
+                presetName.Text = name;
+                presetName.Focus();
+                presetName.SelectAll();
+                Ok(T("新预设已保存，可修改名称。", "New preset saved. You can edit its name."));
+            }
+            catch (Exception e)
+            {
+                Fail(e);
+            }
         }
 
         void ShowPreset()
         {
-            var p = presetList.SelectedItem as KeyboardPreset;
-            if (p == null)
+            if (loadingPresets)
                 return;
+            var preset = presetList.SelectedItem as KeyboardPreset;
+            savePreset.Enabled = deletePreset.Enabled = preset != null;
+            if (preset == null)
+                return;
+            zonesLoaded = true;
             for (int i = 0; i < 4; i++)
             {
-                zoneColors[i] = p.Colors[i];
-                zoneBrightness[i].Value = p.Brightness[i];
+                zoneColors[i] = preset.Colors[i];
+                zoneBrightness[i] = preset.Brightness[i];
                 PaintZone(i);
             }
-            presetName.Text = p.Name;
+            presetName.Text = preset.Name;
             msg.ForeColor = SystemColors.ControlText;
-            msg.Text = T("预设已载入到界面，点击“应用”后写入键盘。",
-                         "Preset loaded into the editor. Click Apply to write it to the keyboard.");
+            msg.Text = T("预设已载入。", "Preset loaded.");
         }
 
         void DeletePreset()
         {
-            var p = presetList.SelectedItem as KeyboardPreset;
-            if (p == null)
-            {
-                Warn(T("请先选择一个预设。", "Select a preset first."));
+            var selected = presetList.SelectedItem as KeyboardPreset;
+            if (selected == null)
                 return;
+            try
+            {
+                var next = new List<KeyboardPreset>(presets);
+                next.Remove(selected);
+                PresetStore.Save(next);
+                presets = next;
+                ReloadPresetList();
+                presetName.Text = "";
+                Ok(T("预设已删除。", "Preset deleted."));
             }
-            presets.Remove(p);
-            PresetStore.Save(presets);
-            ReloadPresetList();
-            Ok(T("预设已删除。", "Preset deleted."));
+            catch (Exception e)
+            {
+                Fail(e);
+            }
         }
 
         void Ok(string s)

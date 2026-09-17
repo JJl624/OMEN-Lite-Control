@@ -4,7 +4,7 @@ In portable releases, the source and license paths below are inside `THIRD-PARTY
 
 ## PawnIO EC port module
 
-`ec/LpcACPIEC.bin` is the unmodified signed module from
+The executable embeds `ec/LpcACPIEC.bin`, the unmodified signed module from
 [PawnIO.Modules 0.2.9](https://github.com/namazso/PawnIO.Modules/releases/tag/0.2.9),
 archive `release_0_2_9.zip`.
 
@@ -24,7 +24,8 @@ Source commit: `5cdf470831fdfff3f7f1d06363ca6b230f3bf35a`. The official installe
 comes from https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0 .
 Installer SHA-256: `1F519A22E47187F70A1379A48CA604981C4FCF694F4E65B734AAA74A9FBA3032`.
 No separate PawnIOLib DLL is needed by this application. The C# transport is independently written against its ABI.
-The module remains an external replaceable file. Modified modules require the
+To replace the embedded module, replace `ec/LpcACPIEC.bin` in the application source
+and rebuild with `build.ps1`. Modified modules require the
 upstream project's appropriate signing/development setup; the application does
 not bypass stock PawnIO's signature enforcement.
 
