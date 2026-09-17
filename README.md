@@ -19,7 +19,7 @@ Performance and keyboard lighting controls for **HP OMEN 15 (2018), i7-8750H + G
 2. Click **Enable readback (install driver)** if prompted. The [PawnIO 2.2.0 installer](https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0) is included; an existing compatible driver is reused. Mode switching and keyboard lighting work without it.
 3. Select a performance mode. For lighting, click a keyboard zone, double-click to choose a color, adjust brightness, then click **Apply**. Loading a preset does not apply it automatically.
 
-Keep the `driver` folder beside the executable. Settings are saved in `data`. Click **Refresh** after changing modes elsewhere; hardware operations have a 1-second cooldown.
+The `driver` folder contains only the installer and can be deleted once compatible PawnIO is installed. Restore it only if you need to install or update the driver from the app. Settings are saved in `data`. Click **Refresh** after changing modes elsewhere; hardware operations have a 1-second cooldown.
 
 [Release notes](https://github.com/JJl624/OMEN-Lite-Control/releases) · [License](LICENSE)
 
