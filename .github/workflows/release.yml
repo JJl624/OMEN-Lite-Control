@@ -49,7 +49,7 @@ jobs:
         with:
           name: OMEN Lite Control ${{ github.ref_name }}
           prerelease: false
-          body_path: docs/releases/${{ github.ref_name }}.md
+          body_path: CHANGELOG.md
           files: |
             dist/*.zip
             dist/SHA256SUMS.txt

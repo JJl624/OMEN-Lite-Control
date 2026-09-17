@@ -30,7 +30,7 @@ i7-8750H + GTX 1060, motherboard SSID 84DB / BIOS F.19**.
 - Without PawnIO, mode switching and keyboard controls still work; performance state shows as unknown.
 - Click **Refresh** after changing modes in another app. Hardware actions have a 1-second cooldown; language switching and color editing remain available.
 
-[Build and driver details](docs/portable.md) · [v0.3.1 release notes](docs/releases/v0.3.1.md)
+[Release notes](CHANGELOG.md)
 
 ## License
 
