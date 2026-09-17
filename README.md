@@ -4,7 +4,7 @@
 
 Performance and keyboard lighting controls for **HP OMEN 15 (2018), i7-8750H + GTX 1060, SSID 84DB / BIOS F.19**. Only tested on this configuration.
 
-<img src="assets/ui-en.png" alt="OMEN-Lite-Control interface" width="100%">
+<img src="assets/ui-en-v0.4.0.png" alt="OMEN-Lite-Control interface" width="100%">
 
 ## Features
 

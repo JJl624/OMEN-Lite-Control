@@ -4,7 +4,7 @@
 
 适用于 **暗影精灵 4（2018），i7-8750H + GTX 1060，SSID 84DB / BIOS F.19** 的性能与键盘灯控制工具。仅在此配置上测试。
 
-<img src="assets/ui.png" alt="OMEN-Lite-Control 界面" width="100%">
+<img src="assets/ui-v0.4.0.png" alt="OMEN-Lite-Control 界面" width="100%">
 
 ## 功能
 
