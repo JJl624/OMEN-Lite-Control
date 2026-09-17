@@ -44,7 +44,14 @@ jobs:
         with:
           name: OMEN Lite Control ${{ github.ref_name }}
           prerelease: false
-          body_path: CHANGELOG.md
+          body: |
+            - 标题栏显示版本号。
+            - 合并许可说明，更新内容移至 Releases。
+            - 运行包移除第三方源码压缩包，源码由发行页单独提供。
+
+            - Show the version in the title bar.
+            - Consolidate license notices and move release notes to Releases.
+            - Remove the dependency source archive from the portable package; source remains available on the release page.
           files: |
             dist/*.zip
             dist/SHA256SUMS.txt

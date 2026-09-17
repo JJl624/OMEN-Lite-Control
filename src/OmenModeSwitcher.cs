@@ -11,9 +11,9 @@ using System.Windows.Forms;
 
 [assembly:AssemblyTitle("OMEN Lite Control")]
 [assembly:AssemblyDescription("Lightweight controls for HP OMEN 15-dc0xxx (84DB)")]
-[assembly:AssemblyVersion("0.4.0.0")]
-[assembly:AssemblyFileVersion("0.4.0.0")]
-[assembly:AssemblyInformationalVersion("0.4.0")]
+[assembly:AssemblyVersion("0.4.1.0")]
+[assembly:AssemblyFileVersion("0.4.1.0")]
+[assembly:AssemblyInformationalVersion("0.4.1")]
 namespace OmenModeSwitcher
 {
     static class HpBios
@@ -357,7 +357,7 @@ namespace OmenModeSwitcher
 
         void ApplyLanguage()
         {
-            Text = T("OMEN 独立控制器", "OMEN Lite Control");
+            Text = T("OMEN 独立控制器", "OMEN Lite Control") + " v" + Application.ProductVersion;
             language.Text = english ? "中文" : "English";
             lastLabel.Text = T("当前模式 · EC 回读", "Mode · EC readback");
             refresh.Text = T("刷新状态", "Refresh");

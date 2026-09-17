@@ -1,37 +1,46 @@
 ﻿param([string]$ZipPath = (Join-Path $PSScriptRoot 'dist\OMEN-Lite-Control-portable.zip'))
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 function Add-File($Archive, [string]$Source, [string]$Name) {
     [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($Archive, $Source, $Name, [IO.Compression.CompressionLevel]::Optimal) | Out-Null
 }
-function Add-Bytes($Archive, [string]$Name, [byte[]]$Bytes) {
+function Add-Text($Archive, [string]$Name, [string]$Text) {
     $entry = $Archive.CreateEntry($Name, [IO.Compression.CompressionLevel]::Optimal)
-    $output = $entry.Open()
-    try { $output.Write($Bytes, 0, $Bytes.Length) } finally { $output.Dispose() }
+    $writer = New-Object IO.StreamWriter($entry.Open(), [Text.UTF8Encoding]::new($true))
+    try { $writer.Write($Text) } finally { $writer.Dispose() }
 }
-# Consolidate third-party source and licenses, without polluting runtime folders.
-$legal = New-Object IO.MemoryStream
+function Read-ZipText($Archive, [string]$Name) {
+    $entry = $Archive.GetEntry($Name)
+    if ($null -eq $entry) { throw "Missing license: $Name" }
+    $reader = New-Object IO.StreamReader($entry.Open())
+    try { $reader.ReadToEnd() } finally { $reader.Dispose() }
+}
+$version = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $PSScriptRoot 'OMEN-Lite-Control.exe')).ProductVersion
+$sourceUrl = "https://github.com/JJl624/OMEN-Lite-Control/archive/refs/tags/v$version.zip"
+# Full notices stay with the binaries; source is in GitHub's Source code attachment.
+$license = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'LICENSE') -Raw -Encoding UTF8
+$license += "`r`nCorresponding application and dependency source: $sourceUrl`r`n"
+$license += "`r`n=== EC module: LGPL ===`r`n" + (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'ec\source\COPYING') -Raw -Encoding UTF8)
+$driverSource = [IO.Compression.ZipFile]::OpenRead((Join-Path $PSScriptRoot 'driver\PawnIO-2.2.0-source.zip'))
 try {
-    $sources = New-Object IO.Compression.ZipArchive($legal, [IO.Compression.ZipArchiveMode]::Create, $true)
+    $license += "`r`n=== PawnIO: GPL ===`r`n" + (Read-ZipText $driverSource 'PawnIO-2.2.0/COPYING')
+    $license += "`r`n=== PawnPP ===`r`n" + (Read-ZipText $driverSource 'PawnIO-2.2.0/PawnPP/LICENSE')
+    $header = Read-ZipText $driverSource 'PawnIO-2.2.0/PawnIO/include/pawnio_um.h'
+    $license += "`r`n=== PawnIO interface exception ===`r`n" + (($header -split '\r?\n' | Select-Object -First 45) -join "`r`n")
+} finally { $driverSource.Dispose() }
+$header = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'ec\source\include\core.inc') -Encoding UTF8
+$license += "`r`n=== PawnIO module headers: 0BSD ===`r`n" + (($header | Select-Object -First 15) -join "`r`n")
+$ZipPath = [IO.Path]::GetFullPath($ZipPath)
+New-Item -ItemType Directory -Path (Split-Path -Parent $ZipPath) -Force | Out-Null
+$stream = [IO.File]::Open($ZipPath, [IO.FileMode]::Create)
+try {
+    $archive = New-Object IO.Compression.ZipArchive($stream, [IO.Compression.ZipArchiveMode]::Create)
     try {
-        Add-File $sources (Join-Path $PSScriptRoot 'THIRD_PARTY_NOTICES.md') 'THIRD_PARTY_NOTICES.md'
-        Add-File $sources (Join-Path $PSScriptRoot 'driver\PawnIO-2.2.0-source.zip') 'driver/PawnIO-2.2.0-source.zip'
-        foreach ($file in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'ec\source') -File -Recurse -Force) {
-            Add-File $sources $file.FullName $file.FullName.Substring($PSScriptRoot.Length + 1).Replace('\','/')
+        foreach ($name in @('OMEN-Lite-Control.exe','driver/PawnIO_setup.exe')) {
+            Add-File $archive (Join-Path $PSScriptRoot $name) $name
         }
-    } finally { $sources.Dispose() }
-    $ZipPath = [IO.Path]::GetFullPath($ZipPath)
-    New-Item -ItemType Directory -Path (Split-Path -Parent $ZipPath) -Force | Out-Null
-    $stream = [IO.File]::Open($ZipPath, [IO.FileMode]::Create)
-    try {
-        $archive = New-Object IO.Compression.ZipArchive($stream, [IO.Compression.ZipArchiveMode]::Create)
-        try {
-            # Exact allowlist: no directory-wide copies of application or development files.
-            foreach ($name in @('OMEN-Lite-Control.exe','driver/PawnIO_setup.exe','LICENSE')) {
-                Add-File $archive (Join-Path $PSScriptRoot $name) $name
-            }
-            $usage = @'
+        Add-Text $archive 'LICENSE' $license
+        $usage = @'
 OMEN Lite Control — HP 84DB / BIOS F.19
 
 完整解压，以管理员身份运行 OMEN-Lite-Control.exe。
@@ -42,12 +51,9 @@ Extract all files and run OMEN-Lite-Control.exe as administrator.
 Install the driver from the app when prompted for mode readback. Keep the driver folder.
 Choose keyboard colors, then click Apply. Settings are saved in data.
 
-Third-party source and licenses: THIRD-PARTY.zip
 https://github.com/JJl624/OMEN-Lite-Control
 '@
-            Add-Bytes $archive 'README.txt' ([Text.UTF8Encoding]::new($true).GetPreamble() + [Text.Encoding]::UTF8.GetBytes($usage))
-            Add-Bytes $archive 'THIRD-PARTY.zip' $legal.ToArray()
-        } finally { $archive.Dispose() }
-    } finally { $stream.Dispose() }
-} finally { $legal.Dispose() }
+        Add-Text $archive 'README.txt' $usage
+    } finally { $archive.Dispose() }
+} finally { $stream.Dispose() }
 Write-Host "Packaged $ZipPath"
