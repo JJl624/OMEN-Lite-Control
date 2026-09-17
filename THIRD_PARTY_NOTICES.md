@@ -1,5 +1,7 @@
 # Third-party notices
 
+In portable releases, the source and license paths below are inside `THIRD-PARTY.zip`.
+
 ## PawnIO EC port module
 
 `ec/LpcACPIEC.bin` is the unmodified signed module from
@@ -15,7 +17,7 @@ archive `release_0_2_9.zip`.
 
 The separate [PawnIO driver](https://github.com/namazso/PawnIO.Setup) must be
 installed. Its [source and license](https://github.com/namazso/PawnIO) specify
-GPL with the project's interface exception. Version 0.3.0 bundles the unmodified official signed 2.2.0 installer in
+GPL with the project's interface exception. The application bundles the unmodified official signed 2.2.0 installer in
 `driver/PawnIO_setup.exe`. Driver source (including the pinned PawnPP submodule),
 COPYING and the interface exception are bundled in `driver/PawnIO-2.2.0-source.zip`.
 Source commit: `5cdf470831fdfff3f7f1d06363ca6b230f3bf35a`. The official installer

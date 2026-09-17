@@ -1,9 +1,9 @@
 ﻿using System; using System.Threading.Tasks; using System.Collections.Generic; using System.Drawing; using System.IO; using System.Linq; using System.Management; using System.Reflection; using System.Text; using System.Windows.Forms;
 [assembly: AssemblyTitle("OMEN Lite Control")]
 [assembly: AssemblyDescription("Lightweight controls for HP OMEN 15-dc0xxx (84DB)")]
-[assembly: AssemblyVersion("0.3.0.0")]
-[assembly: AssemblyFileVersion("0.3.0.0")]
-[assembly: AssemblyInformationalVersion("0.3.0")]
+[assembly: AssemblyVersion("0.3.1.0")]
+[assembly: AssemblyFileVersion("0.3.1.0")]
+[assembly: AssemblyInformationalVersion("0.3.1")]
 namespace OmenModeSwitcher {
  static class HpBios {
   static ManagementObject Bios(){var s=new ManagementScope(@"root\wmi");s.Connect();var q=new ObjectQuery("SELECT * FROM hpqBIntM");var all=new ManagementObjectSearcher(s,q).Get().Cast<ManagementObject>().ToArray();var b=all.FirstOrDefault(x=>String.Equals(Convert.ToString(x["InstanceName"]),@"ACPI\PNP0C14\0_0",StringComparison.OrdinalIgnoreCase))??all.FirstOrDefault();if(b==null)throw new InvalidOperationException("找不到 HP WMI BIOS 接口。");return b;}

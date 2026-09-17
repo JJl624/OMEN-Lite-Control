@@ -18,7 +18,7 @@
 .\package.ps1
 ```
 
-只生成 `OMEN-Lite-Control.exe`。便携包不包含开发源码、测试或构建脚本；第三方源码和许可证保留。
+只生成 `OMEN-Lite-Control.exe`。发行包固定为 6 个文件：主程序、README.txt、LICENSE、THIRD-PARTY.zip、EC 模块和驱动安装器。便携包不包含开发源码、测试或构建脚本；第三方源码和许可证集中保存在 THIRD-PARTY.zip。
 程序不再包含旧 Eco 恢复功能、NVIDIA DLL 或显示刷新率/CPU 电源策略代码。
 
 ## 验证范围
