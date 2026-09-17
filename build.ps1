@@ -1,7 +1,7 @@
 ﻿param([string]$OutputDirectory = $PSScriptRoot)
 $ErrorActionPreference = 'Stop'
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-$sources = @('OmenModeSwitcher.cs','EcReader.cs','DriverSetup.cs','KeyboardLightingControl.cs') | ForEach-Object { Join-Path (Join-Path $PSScriptRoot 'src') $_ }
+$sources = @('OmenModeSwitcher.cs','EcReader.cs','DriverSetup.cs','KeyboardLightingControl.cs','LanguageSwitch.cs') | ForEach-Object { Join-Path (Join-Path $PSScriptRoot 'src') $_ }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $exe = Join-Path $OutputDirectory 'OMEN-Lite-Control.exe'
 & $csc /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 `

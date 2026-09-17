@@ -11,9 +11,9 @@ using System.Windows.Forms;
 
 [assembly:AssemblyTitle("OMEN Lite Control")]
 [assembly:AssemblyDescription("Lightweight controls for HP OMEN 15-dc0xxx (84DB)")]
-[assembly:AssemblyVersion("0.4.2.0")]
-[assembly:AssemblyFileVersion("0.4.2.0")]
-[assembly:AssemblyInformationalVersion("0.4.2")]
+[assembly:AssemblyVersion("0.4.3.0")]
+[assembly:AssemblyFileVersion("0.4.3.0")]
+[assembly:AssemblyInformationalVersion("0.4.3")]
 namespace OmenModeSwitcher
 {
     static class HpBios
@@ -107,21 +107,6 @@ namespace OmenModeSwitcher
         public static string File(string name)
         {
             Directory.CreateDirectory(DirectoryPath);
-            string marker = Path.Combine(DirectoryPath, ".initialized");
-            if (!System.IO.File.Exists(marker))
-            {
-                string old = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "OMEN-Lite-Control");
-                foreach (string item in new[] { "language.txt", "keyboard-presets.txt" })
-                {
-                    string source = Path.Combine(old, item),
-                           target = Path.Combine(DirectoryPath, item);
-                    if (!System.IO.File.Exists(target) && System.IO.File.Exists(source))
-                        System.IO.File.Copy(source, target, false);
-                }
-                System.IO.File.WriteAllText(marker, "Portable preferences initialized.");
-            }
             return Path.Combine(DirectoryPath, name);
         }
     }
@@ -229,8 +214,8 @@ namespace OmenModeSwitcher
         ToolStripStatusLabel msg;
         ToolTip detailsTip = new ToolTip();
         GroupBox modeBox, kb;
-        Button enableDriver, refresh, def, perf, cool, newPreset, apply, savePreset, deletePreset,
-            language;
+        Button enableDriver, refresh, def, perf, cool, newPreset, apply, savePreset, deletePreset;
+        LanguageSwitch language;
         TextBox presetName;
         ListBox presetList;
         bool loadingPresets;
@@ -264,8 +249,10 @@ namespace OmenModeSwitcher
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            language = B("", 535, 12, 88, 30);
-            language.Click += (s, e) => SwitchLanguage();
+            language = new LanguageSwitch();
+            language.SetBounds(535, 12, 88, 32);
+            Controls.Add(language);
+            language.SelectionChanged += (s, e) => SwitchLanguage();
             lastLabel = L("", 22, 15, 175, 28);
             mode = L("", 200, 15, 190, 28);
             mode.Font = new Font(Font, FontStyle.Bold);
@@ -360,7 +347,7 @@ namespace OmenModeSwitcher
         void ApplyLanguage()
         {
             Text = T("OMEN 独立控制器", "OMEN Lite Control") + " v" + Application.ProductVersion;
-            language.Text = english ? "中文" : "English";
+            language.English = english;
             lastLabel.Text = T("当前模式 · EC 回读", "Mode · EC readback");
             refresh.Text = T("刷新状态", "Refresh");
             modeBox.Text = T("BIOS 性能策略", "BIOS Performance Policy");
@@ -388,9 +375,17 @@ namespace OmenModeSwitcher
 
         void SwitchLanguage()
         {
-            english = !english;
-            File.WriteAllText(UserData.File("language.txt"), english ? "en" : "zh");
-            ApplyLanguage();
+            try
+            {
+                File.WriteAllText(UserData.File("language.txt"), english ? "zh" : "en");
+                english = !english;
+                ApplyLanguage();
+            }
+            catch (Exception e)
+            {
+                language.English = english;
+                Fail(e);
+            }
         }
 
         string ModeName(string id)
@@ -945,10 +940,22 @@ namespace OmenModeSwitcher
         {
             if (args.Length == 2 && args[0] == "--status")
             {
+                string output;
+                try
+                {
+                    string root = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
+                    output = Path.GetFullPath(Path.Combine(root, args[1]));
+                    if (!output.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                        return 1;
+                }
+                catch
+                {
+                    return 1;
+                }
                 try
                 {
                     var state = HardwareStatus.Read();
-                    File.WriteAllText(args[1],
+                    File.WriteAllText(output,
                                       "mode=" + state.Id + Environment.NewLine + state.Raw +
                                           Environment.NewLine +
                                           "read_at_utc=" + state.ReadAtUtc.ToString("o"),
@@ -957,7 +964,7 @@ namespace OmenModeSwitcher
                 }
                 catch (Exception e)
                 {
-                    File.WriteAllText(args[1], "mode=unknown" + Environment.NewLine + e.ToString(),
+                    File.WriteAllText(output, "mode=unknown" + Environment.NewLine + e.ToString(),
                                       Encoding.UTF8);
                     return 1;
                 }

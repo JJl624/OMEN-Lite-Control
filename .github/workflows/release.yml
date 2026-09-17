@@ -45,11 +45,11 @@ jobs:
           name: OMEN Lite Control ${{ github.ref_name }}
           prerelease: false
           body: |
-            - 刷新状态时同步更新四分区键盘颜色。
-            - 预设列表首项固定显示当前 BIOS 颜色，支持载入和另存；应用灯光后自动回读更新。
+            - 移除旧版用户目录配置导入，设置仅保存在程序目录内。
+            - 语言切换改为中文 / EN 左右开关。
 
-            - Refresh synchronizes the four-zone keyboard colors with BIOS.
-            - Pin current BIOS colors first in the preset list, with load and save-as support; applying lighting also updates the readback.
+            - Remove legacy user-profile imports; settings stay inside the application directory.
+            - Replace the language button with a Chinese / EN switch.
           files: |
             dist/*.zip
             dist/SHA256SUMS.txt
