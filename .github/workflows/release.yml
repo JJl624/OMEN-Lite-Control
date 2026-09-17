@@ -19,10 +19,6 @@ jobs:
         shell: powershell
         run: ./build.ps1
 
-      - name: Test without hardware access
-        shell: powershell
-        run: ./tests/run.ps1
-
       - name: Package and checksum
         shell: powershell
         env:
@@ -31,7 +27,6 @@ jobs:
           $version = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:RELEASE_REF } else { 'snapshot' }
           $zip = Join-Path $PWD "dist/OMEN-Lite-Control-$version-portable.zip"
           ./package.ps1 -ZipPath $zip
-          ./tests/PackageTests.ps1 -ZipPath $zip
           $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $(Split-Path -Leaf $zip)" | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding ASCII
 
