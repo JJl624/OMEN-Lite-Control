@@ -211,7 +211,8 @@ namespace OmenModeSwitcher
         readonly KeyboardPreset biosPreset =
             new KeyboardPreset { Brightness = new[] { 100, 100, 100, 100 } };
         Label lastLabel, mode, ecDetails;
-        ToolStripStatusLabel msg;
+        ToolStripStatusLabel msg, pawnIndicator;
+        DriverState? pawnState;
         ToolTip detailsTip = new ToolTip();
         GroupBox modeBox, kb;
         Button enableDriver, refresh, def, perf, cool, newPreset, apply, savePreset, deletePreset;
@@ -312,6 +313,11 @@ namespace OmenModeSwitcher
                                              AutoToolTip = false };
             msg.TextChanged += (sender, args) => msg.ToolTipText = msg.Text;
             statusBar.Items.Add(msg);
+            pawnIndicator =
+                new ToolStripStatusLabel { BorderSides = ToolStripStatusLabelBorderSides.Left,
+                                           Padding = new Padding(10, 0, 2, 0),
+                                           AutoToolTip = false };
+            statusBar.Items.Add(pawnIndicator);
             Controls.Add(statusBar);
             FormClosed += (sender, args) => detailsTip.Dispose();
             ApplyLanguage();
@@ -369,6 +375,7 @@ namespace OmenModeSwitcher
             msg.ForeColor = SystemColors.ControlText;
             msg.Text = T("就绪", "Ready");
             UpdateBiosPresetName();
+            RenderPawnIndicator();
             if (renderMode != null)
                 renderMode();
         }
@@ -512,8 +519,59 @@ namespace OmenModeSwitcher
             presetName.Text = preset.Name;
         }
 
+        void SetPawnState(DriverState? state)
+        {
+            pawnState = state;
+            RenderPawnIndicator();
+        }
+
+        void RenderPawnIndicator()
+        {
+            string status;
+            string detail;
+            Color color;
+            switch (pawnState)
+            {
+            case DriverState.Available:
+                status = T("可用", "Ready");
+                detail = T("PawnIO 驱动可访问，版本兼容。",
+                           "PawnIO is accessible and its version is compatible.");
+                color = Color.DarkGreen;
+                break;
+            case DriverState.Missing:
+                status = T("未安装", "Not installed");
+                detail = T("未检测到 PawnIO 驱动，可点击启用硬件读取安装。",
+                           "PawnIO is not installed. Use Enable readback to install it.");
+                color = SystemColors.GrayText;
+                break;
+            case DriverState.UpdateRequired:
+                status = T("需更新", "Update needed");
+                detail = T("PawnIO 版本过旧，需要更新。",
+                           "The installed PawnIO version needs updating.");
+                color = Color.DarkOrange;
+                break;
+            case DriverState.Unavailable:
+                status = T("不可用", "Unavailable");
+                detail = T(
+                    "无法访问 PawnIO，请检查管理员权限或重启后刷新。",
+                    "Cannot access PawnIO. Check administrator permissions or restart and refresh.");
+                color = Color.DarkRed;
+                break;
+            default:
+                status = T("未检测", "Not checked");
+                detail = T("点击刷新状态以检测 PawnIO。", "Refresh to check PawnIO.");
+                color = SystemColors.GrayText;
+                break;
+            }
+            pawnIndicator.Text = "● PawnIO: " + status;
+            pawnIndicator.ForeColor = color;
+            pawnIndicator.ToolTipText = detail;
+            pawnIndicator.AccessibleName = pawnIndicator.Text;
+        }
+
         void ShowState(PerformanceState state)
         {
+            SetPawnState(DriverState.Available);
             renderMode = () => ShowState(state);
             enableDriver.Visible = false;
             ecDetails.Width = 601;
@@ -536,6 +594,7 @@ namespace OmenModeSwitcher
 
         void RenderDriverState(DriverState state)
         {
+            SetPawnState(state);
             renderMode = () => RenderDriverState(state);
             mode.Text = T("未知（无法回读）", "Readback unavailable");
             mode.ForeColor = Color.DarkOrange;
@@ -562,11 +621,9 @@ namespace OmenModeSwitcher
         {
             try
             {
-                DriverState state = await Task.Run(() =>
-                                                   {
-                                                       HardwareStatus.RequireSupportedBoard();
-                                                       return DriverSetup.Probe();
-                                                   });
+                SetPawnState(null);
+                DriverState state = await Task.Run(() => DriverSetup.Probe());
+                SetPawnState(state);
                 if (state == DriverState.Available)
                     ShowState(await Task.Run(() => HardwareStatus.Read()));
                 else
@@ -598,6 +655,7 @@ namespace OmenModeSwitcher
             try
             {
                 DriverState state = DriverSetup.Probe();
+                SetPawnState(state);
                 if (state != DriverState.Available)
                     RenderDriverState(state);
             }
