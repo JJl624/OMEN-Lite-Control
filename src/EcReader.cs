@@ -11,24 +11,42 @@ using Microsoft.Win32.SafeHandles;
 namespace OmenModeSwitcher
 {
     // Share one process-wide lane for WMI commands and complete EC snapshots.
-    // Throttle snapshots, never the individual port I/O of an EC handshake.
+    // Serialize all access. Space writes by one second; reads only need a short gap.
+    // Failed transactions retain a full recovery interval.
     internal static class HardwareAccess
     {
         static readonly object Sync = new object();
         static readonly Stopwatch SinceCompletion = new Stopwatch();
 
-        internal static T Run<T>(Func<T> action)
+        static readonly Stopwatch SinceWrite = new Stopwatch();
+        static bool failed;
+
+        internal static T Run<T>(Func<T> action, bool write = false)
         {
             lock (Sync)
             {
-                while (SinceCompletion.IsRunning && SinceCompletion.ElapsedMilliseconds < 1000)
-                    Thread.Sleep((int)Math.Max(1, 1000 - SinceCompletion.ElapsedMilliseconds));
+                long gap = failed ? 1000 : 50;
+                long wait =
+                    SinceCompletion.IsRunning ? gap - SinceCompletion.ElapsedMilliseconds : 0;
+                if (write && SinceWrite.IsRunning)
+                    wait = Math.Max(wait, 1000 - SinceWrite.ElapsedMilliseconds);
+                if (wait > 0)
+                    Thread.Sleep((int)wait);
                 try
                 {
-                    return action();
+                    var result = action();
+                    failed = false;
+                    return result;
+                }
+                catch
+                {
+                    failed = true;
+                    throw;
                 }
                 finally
                 {
+                    if (write)
+                        SinceWrite.Restart();
                     SinceCompletion.Restart();
                 } // Errors also need recovery time.
             }
@@ -224,7 +242,8 @@ namespace OmenModeSwitcher
                 previousEc = ec;
                 Thread.Sleep(5);
             }
-            throw new InvalidDataException("EC mode changed while reading; refresh again.");
+            // No stable snapshot within the sampling window: retry like a busy EC.
+            throw new TimeoutException("EC snapshot did not stabilize; refresh again.");
         }
     }
 
@@ -303,7 +322,7 @@ namespace OmenModeSwitcher
                 }
                 catch (TimeoutException)
                 {
-                    // ACPI/firmware can briefly own the EC, especially during a mode change.
+                    // A busy EC or unstable snapshot is transient, especially during a mode change.
                     // Release our mutex, then retry a whole snapshot, never a fabricated byte.
                     if (attempt == 2)
                         throw;

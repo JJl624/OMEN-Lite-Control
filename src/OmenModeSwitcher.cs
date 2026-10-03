@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Drawing;
@@ -11,9 +13,9 @@ using System.Windows.Forms;
 
 [assembly:AssemblyTitle("OMEN Lite Control")]
 [assembly:AssemblyDescription("Lightweight controls for HP OMEN 15-dc0xxx (84DB)")]
-[assembly:AssemblyVersion("0.4.4.0")]
-[assembly:AssemblyFileVersion("0.4.4.0")]
-[assembly:AssemblyInformationalVersion("0.4.4")]
+[assembly:AssemblyVersion("0.5.0.0")]
+[assembly:AssemblyFileVersion("0.5.0.0")]
+[assembly:AssemblyInformationalVersion("0.5.0")]
 namespace OmenModeSwitcher
 {
     static class HpBios
@@ -35,7 +37,9 @@ namespace OmenModeSwitcher
 
         static ManagementBaseObject Call(string method, uint cmd, uint type, byte[] data)
         {
-            return HardwareAccess.Run(() => CallCore(method, cmd, type, data));
+            return HardwareAccess.Run(() => CallCore(method, cmd, type, data),
+                                      (cmd == 0x20008 && type == 0x1A) ||
+                                          (cmd == 0x20009 && type == 0x03));
         }
 
         static ManagementBaseObject CallCore(string method, uint cmd, uint type, byte[] data)
@@ -125,6 +129,9 @@ namespace OmenModeSwitcher
 
     static class PresetStore
     {
+        public static bool LightingEnabled;
+        public static string[] ModePresets = new string[3];
+
         static string PathName
         {
             get {
@@ -142,6 +149,16 @@ namespace OmenModeSwitcher
             var list = new List<KeyboardPreset>();
             string[] stored =
                 File.Exists(PathName) ? File.ReadAllLines(PathName, Encoding.UTF8) : new string[0];
+            LightingEnabled = stored.Contains("# lighting-enabled");
+            ModePresets = new string[3];
+            foreach (string setting in stored.Where(x => x.StartsWith("# mode|")))
+            {
+                string[] parts = setting.Split('|');
+                int mode;
+                if (parts.Length == 3 && Int32.TryParse(parts[1], out mode) && mode >= 0 &&
+                    mode < 3)
+                    ModePresets[mode] = parts[2];
+            }
             foreach (string line in stored)
             {
                 string[] p = line.Split('|');
@@ -188,34 +205,65 @@ namespace OmenModeSwitcher
             return list;
         }
 
-        public static void Save(List<KeyboardPreset> list)
+        public static void Save(List<KeyboardPreset> list, string[] bindings = null,
+                                bool? enabled = null)
         {
+            bindings = (bindings ?? ModePresets)
+                           .Select(name => list.Any(p => p.Name == name) ? name : null)
+                           .ToArray();
+            bool active = enabled ?? LightingEnabled;
+            var header = new List<string> { "# presets-v2" };
+            if (active)
+                header.Add("# lighting-enabled");
+            for (int i = 0; i < 3; i++)
+                if (!String.IsNullOrEmpty(bindings[i]))
+                    header.Add("# mode|" + i + "|" + Clean(bindings[i]));
             var lines = list.Select(
                 x => Clean(x.Name) + "|" +
                      String.Join("|", Enumerable.Range(0, 4).SelectMany(
                                           i => new[] { (x.Colors[i].ToArgb() & 0xFFFFFF).ToString(),
                                                        x.Brightness[i].ToString() })));
             string path = PathName, temp = path + ".tmp";
-            File.WriteAllLines(temp, new[] { "# presets-v2" }.Concat(lines), Encoding.UTF8);
+            File.WriteAllLines(temp, header.Concat(lines), Encoding.UTF8);
             if (File.Exists(path))
                 File.Replace(temp, path, null);
             else
                 File.Move(temp, path);
+            ModePresets = bindings;
+            LightingEnabled = active;
         }
     }
 
     sealed class MainForm : Form
     {
         Action renderMode;
-        bool english, installing, hardwareBusy, biosColorsLoaded, biosReadFailed;
+        bool english, installing, biosColorsLoaded, biosReadFailed;
+        volatile bool hardwareBusy;
+        readonly Stopwatch operationTime = new Stopwatch();
         readonly KeyboardPreset biosPreset =
             new KeyboardPreset { Brightness = new[] { 100, 100, 100, 100 } };
         Label lastLabel, mode, ecDetails;
+        TableLayoutPanel flagTable;
+        Label performanceLabel, performanceValue, performanceRaw, comfortLabel, comfortValue,
+            comfortRaw;
+        CheckBox hotkeyEnabled;
+        ComboBox hotkeyChoice;
+        TextBox hotkeyEdit;
+        HotkeySettings hotkeySettings;
+        ModeHotkey hotkey;
+        bool updatingHotkey, editingHotkey;
+        volatile int hotkeyGeneration;
+        int hotkeyPending;
         ToolStripStatusLabel msg, pawnIndicator;
         DriverState? pawnState;
         ToolTip detailsTip = new ToolTip();
         GroupBox modeBox, kb;
-        Button enableDriver, refresh, def, perf, cool, newPreset, apply, savePreset, deletePreset;
+        Button enableDriver, refresh, newPreset, apply, savePreset, deletePreset;
+        RadioButton def, perf, cool;
+        CheckBox lightingLink;
+        readonly ComboBox[] modePresets = new ComboBox[3];
+        bool loadingBindings;
+        int currentMode = -1, lastLightingMode = -1;
         LanguageSwitch language;
         TextBox presetName;
         ListBox presetList;
@@ -246,31 +294,103 @@ namespace OmenModeSwitcher
             english = File.Exists(lf) && File.ReadAllText(lf).Trim() == "en";
             presets = PresetStore.Load(english);
             Font = new Font("Microsoft YaHei UI", 9.5F);
-            ClientSize = new Size(650, 650);
+            ClientSize = new Size(650, 700);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
             language = new LanguageSwitch();
-            language.SetBounds(535, 12, 88, 32);
+            language.SetBounds(510, 12, 114, 32);
             Controls.Add(language);
             language.SelectionChanged += (s, e) => SwitchLanguage();
             lastLabel = L("", 22, 15, 175, 28);
-            mode = L("", 200, 15, 190, 28);
+            mode = L("", 200, 15, 164, 28);
             mode.Font = new Font(Font, FontStyle.Bold);
-            refresh = B("", 415, 12, 105, 32);
+            refresh = B("", 394, 12, 100, 32);
             refresh.Click += (s, e) => RefreshAll();
-            ecDetails = L("", 22, 52, 601, 48);
-            enableDriver = B("", 388, 61, 235, 32);
+            ecDetails = L("", 22, 50, 340, 48);
+            flagTable = new TableLayoutPanel { ColumnCount = 3, RowCount = 2 };
+            flagTable.SetBounds(22, 50, 340, 48);
+            flagTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 106));
+            flagTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));
+            flagTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            flagTable.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+            flagTable.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+            Controls.Add(flagTable);
+            performanceLabel = FlagCell(0, 0);
+            performanceValue = FlagCell(1, 0);
+            performanceRaw = FlagCell(2, 0);
+            comfortLabel = FlagCell(0, 1);
+            comfortValue = FlagCell(1, 1);
+            comfortRaw = FlagCell(2, 1);
+            var divider = new Panel { BackColor = SystemColors.ControlDark };
+            divider.SetBounds(373, 12, 1, 106);
+            Controls.Add(divider);
+            var settings = new Panel();
+            settings.SetBounds(394, 54, 230, 64);
+            Controls.Add(settings);
+            hotkeyEnabled =
+                new CheckBox { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft };
+            hotkeyEnabled.SetBounds(0, 0, 100, 28);
+            settings.Controls.Add(hotkeyEnabled);
+            hotkeyChoice = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+            hotkeyChoice.SetBounds(116, 0, 114, 28);
+            settings.Controls.Add(hotkeyChoice);
+            hotkeyChoice.SelectedIndexChanged += (sender, args) =>
+            {
+                if (updatingHotkey)
+                    return;
+                editingHotkey = false;
+                SaveHotkey(hotkeySettings.Enabled,
+                           hotkeyChoice.SelectedIndex == 0
+                               ? Keys.None
+                               : (hotkeySettings.Key == Keys.None ? Keys.Control | Keys.Alt | Keys.Q
+                                                                  : hotkeySettings.Key));
+            };
+            hotkeyEdit = new TextBox { ReadOnly = true, TextAlign = HorizontalAlignment.Center };
+            hotkeyEdit.SetBounds(0, 36, 230, 26);
+            settings.Controls.Add(hotkeyEdit);
+            hotkeyEdit.Enter += (sender, args) => BeginHotkeyCapture();
+            hotkeyEdit.Leave += (sender, args) => FinishHotkeyCapture(hotkeySettings.Key);
+            hotkeyEdit.KeyDown += (sender, args) =>
+            {
+                args.SuppressKeyPress = true;
+                if (args.KeyCode == Keys.Escape)
+                    FinishHotkeyCapture(hotkeySettings.Key);
+                else if (HotkeySettings.IsValid(args.KeyData))
+                    FinishHotkeyCapture(args.KeyData);
+            };
+            hotkeyEnabled.CheckedChanged += (sender, args) =>
+                SaveHotkey(hotkeyEnabled.Checked, hotkeySettings.Key);
+            hotkeySettings = HotkeySettings.Load();
+            enableDriver = B("", 22, 76, 340, 26);
             enableDriver.Visible = false;
             enableDriver.Click += (s, e) => InstallDriver();
-            modeBox = G("", 20, 108, 610, 92);
-            def = B("", 18, 27, 180, 46, modeBox);
-            perf = B("", 213, 27, 180, 46, modeBox);
-            cool = B("", 408, 27, 180, 46, modeBox);
+            modeBox = G("", 20, 128, 610, 122);
+            def = ModeButton(18);
+            perf = ModeButton(213);
+            cool = ModeButton(408);
             def.Click += (s, e) => Mode(0);
             perf.Click += (s, e) => Mode(1);
             cool.Click += (s, e) => Mode(2);
-            kb = G("", 20, 210, 610, 407);
+            lightingLink = new CheckBox { AutoSize = true, BackColor = SystemColors.Control,
+                                          TextAlign = ContentAlignment.MiddleLeft,
+                                          CheckAlign = ContentAlignment.MiddleLeft };
+            lightingLink.SetBounds(215, 0, 180, 24);
+            lightingLink.SizeChanged += (sender, args) => lightingLink.Left =
+                (modeBox.ClientSize.Width - lightingLink.Width) / 2;
+            modeBox.Controls.Add(lightingLink);
+
+            lightingLink.CheckedChanged += (sender, args) => SaveLightingSettings();
+            for (int i = 0; i < 3; i++)
+            {
+                var choice = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+                choice.SetBounds(18 + i * 195, 79, 180, 28);
+                modeBox.Controls.Add(choice);
+                modePresets[i] = choice;
+                choice.SelectedIndexChanged += (sender, args) => SaveLightingSettings();
+            }
+            kb = G("", 20, 260, 610, 407);
+
             keyboard = new KeyboardLightingControl();
             keyboard.SetBounds(15, 26, 575, 190);
             keyboard.ZoneSelected += (sender, args) => UpdateZoneEditor();
@@ -319,10 +439,273 @@ namespace OmenModeSwitcher
                                            AutoToolTip = false };
             statusBar.Items.Add(pawnIndicator);
             Controls.Add(statusBar);
-            FormClosed += (sender, args) => detailsTip.Dispose();
+            FormClosed += (sender, args) =>
+            {
+                if (hotkey != null)
+                    hotkey.Dispose();
+                detailsTip.Dispose();
+            };
+            Shown += (sender, args) => InitializeHotkey();
+            Deactivate += (sender, args) => FinishHotkeyCapture(hotkeySettings.Key, false);
             ApplyLanguage();
             ReloadPresetList();
             RefreshAll();
+        }
+
+        Label FlagCell(int column, int row)
+        {
+            var cell = new Label { Dock = DockStyle.Fill, Margin = Padding.Empty,
+                                   TextAlign = ContentAlignment.MiddleLeft,
+                                   ForeColor = SystemColors.GrayText };
+            flagTable.Controls.Add(cell, column, row);
+            return cell;
+        }
+
+        void RenderHotkey()
+        {
+            updatingHotkey = true;
+            hotkeyEnabled.Checked = hotkeySettings.Enabled;
+            hotkeyEnabled.Text = T("快捷键", "Hotkey");
+            hotkeyChoice.Items.Clear();
+            hotkeyChoice.Items.Add("OMEN");
+            hotkeyChoice.Items.Add(T("自定义", "Custom"));
+            hotkeyChoice.SelectedIndex = hotkeySettings.Key == Keys.None ? 0 : 1;
+            hotkeyEdit.Visible = hotkeySettings.Key != Keys.None;
+            hotkeyEdit.Text = HotkeySettings.Display(hotkeySettings.Key);
+            detailsTip.SetToolTip(hotkeyEdit,
+                                  T("点击此处，直接按 Ctrl / Alt 组合键；Esc 取消。",
+                                    "Click here and press a Ctrl / Alt combination; Esc cancels."));
+            updatingHotkey = false;
+        }
+
+        void InitializeHotkey()
+        {
+            try
+            {
+                hotkey = new ModeHotkey();
+                hotkey.Blocked = hardwareBusy;
+                hotkey.Pressed += (sender, args) =>
+                {
+                    int generation = hotkeyGeneration;
+                    if (hardwareBusy || editingHotkey || !IsHandleCreated || IsDisposed ||
+                        Interlocked.CompareExchange(ref hotkeyPending, 1, 0) != 0)
+                        return;
+                    try
+                    {
+                        BeginInvoke((Action)(() =>
+                                             {
+                                                 try
+                                                 {
+                                                     if (generation == hotkeyGeneration &&
+                                                         !hardwareBusy && hotkeySettings.Enabled &&
+                                                         !editingHotkey && !IsDisposed)
+                                                         CycleMode();
+                                                 }
+                                                 finally
+                                                 {
+                                                     Interlocked.Exchange(ref hotkeyPending, 0);
+                                                 }
+                                             }));
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        Interlocked.Exchange(ref hotkeyPending, 0);
+                    }
+                };
+                hotkey.Configure(hotkeySettings.Enabled, hotkeySettings.Key);
+            }
+            catch (Exception e)
+            {
+                hotkeySettings.Enabled = false;
+                Warn(T("快捷键未启用：", "Hotkey unavailable: ") + e.Message);
+            }
+            RenderHotkey();
+        }
+
+        void SaveHotkey(bool enabled, Keys key)
+        {
+            if (updatingHotkey)
+                return;
+            var previous = hotkeySettings;
+            try
+            {
+                if (hotkey == null)
+                    throw new InvalidOperationException(
+                        T("快捷键尚未就绪。", "Hotkey is not ready."));
+                hotkeyGeneration++;
+                hotkey.Configure(enabled, key);
+                var next = new HotkeySettings { Enabled = enabled, Key = key };
+                next.Save();
+                hotkeySettings = next;
+                Ok(enabled ? T("模式切换快捷键已启用。", "Mode hotkey enabled.")
+                           : T("快捷键已关闭。", "Hotkey disabled."));
+            }
+            catch (Exception e)
+            {
+                try
+                {
+                    if (hotkey != null)
+                        hotkey.Configure(previous.Enabled, previous.Key);
+                }
+                catch
+                {
+                    previous.Enabled = false;
+                }
+                Warn(T("快捷键设置失败：", "Cannot set hotkey: ") + e.Message);
+            }
+            RenderHotkey();
+        }
+
+        void BeginHotkeyCapture()
+        {
+            if (updatingHotkey || hotkeySettings.Key == Keys.None || editingHotkey)
+                return;
+            try
+            {
+                hotkey.Configure(false, hotkeySettings.Key);
+                editingHotkey = true;
+                hotkeyGeneration++;
+                hotkeyEdit.Text = T("请按组合键…", "Press shortcut…");
+            }
+            catch (Exception e)
+            {
+                Warn(e.Message);
+            }
+        }
+
+        void FinishHotkeyCapture(Keys key, bool moveFocus = true)
+        {
+            if (!editingHotkey)
+                return;
+            editingHotkey = false;
+            hotkeyGeneration++;
+            SaveHotkey(hotkeySettings.Enabled, key);
+            if (moveFocus)
+                hotkeyChoice.Focus();
+        }
+
+        async void CycleMode()
+        {
+            if (!BeginHardwareOperation())
+                return;
+            try
+            {
+                msg.Text = T("正在读取当前模式…", "Reading current mode…");
+                var state = await Task.Run(() => HardwareStatus.Read());
+                ShowState(state);
+                if (state.Mode < 0)
+                {
+                    Warn(T("模式标志冲突，未切换。", "Conflicting mode flags; no switch made."));
+                    return;
+                }
+                await SwitchModeCore((byte)((state.Mode + 1) % 3));
+            }
+            catch (Exception e)
+            {
+                ShowReadFailure(e);
+            }
+            finally
+            {
+                EndHardwareOperation();
+            }
+        }
+
+        RadioButton ModeButton(int x)
+        {
+            var button = new RadioButton { Appearance = Appearance.Button, AutoCheck = false,
+                                           TextAlign = ContentAlignment.MiddleCenter };
+            button.SetBounds(x, 27, 180, 46);
+            modeBox.Controls.Add(button);
+            return button;
+        }
+
+        void SelectMode(int value)
+        {
+            currentMode = value;
+            def.Checked = value == 0;
+            perf.Checked = value == 1;
+            cool.Checked = value == 2;
+        }
+
+        void ReloadLightingSettings()
+        {
+            loadingBindings = true;
+            try
+            {
+                lightingLink.Checked = PresetStore.LightingEnabled;
+                for (int i = 0; i < 3; i++)
+                {
+                    var choice = modePresets[i];
+                    choice.Items.Clear();
+                    choice.Items.Add(T("不改变灯光", "Keep lighting"));
+                    foreach (var preset in presets)
+                        choice.Items.Add(preset);
+                    choice.SelectedItem =
+                        presets.FirstOrDefault(p => p.Name == PresetStore.ModePresets[i]);
+                    if (choice.SelectedIndex < 0)
+                        choice.SelectedIndex = 0;
+                    choice.Enabled = !hardwareBusy && PresetStore.LightingEnabled;
+                }
+            }
+            finally
+            {
+                loadingBindings = false;
+            }
+        }
+
+        void SaveLightingSettings()
+        {
+            if (loadingBindings)
+                return;
+            try
+            {
+                var names = modePresets.Select(c => c.SelectedItem as KeyboardPreset)
+                                .Select(p => p == null ? null : p.Name)
+                                .ToArray();
+                PresetStore.Save(presets, names, lightingLink.Checked);
+                lastLightingMode = -1;
+                ReloadLightingSettings();
+                Ok(T("灯光联动设置已保存，下次模式读取时生效。",
+                     "Lighting link saved; takes effect on the next mode read."));
+            }
+            catch (Exception e)
+            {
+                ReloadLightingSettings();
+                Fail(e);
+            }
+        }
+
+        async Task<bool> ApplyModeLighting()
+        {
+            if (!PresetStore.LightingEnabled || currentMode < 0 || currentMode == lastLightingMode)
+                return false;
+            int observed = currentMode;
+            var preset = presets.FirstOrDefault(p => p.Name == PresetStore.ModePresets[observed]);
+            if (preset == null)
+            {
+                lastLightingMode = observed;
+                return false;
+            }
+            var colors = preset.Colors.ToArray();
+            var levels = preset.Brightness.ToArray();
+            string name = preset.Name;
+            try
+            {
+                msg.ForeColor = SystemColors.ControlText;
+                msg.Text = T("正在应用模式灯光…", "Applying mode lighting…");
+                await Task.Run(() => HpBios.SetZones(colors, levels));
+                lastLightingMode = observed;
+                msg.Text = T("灯光已写入，正在回读确认…", "Lighting written; checking readback…");
+                await RefreshKeyboard(true);
+                Ok(T("模式灯光已应用：", "Mode lighting applied: ") + name);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Warn(T("模式已读取，灯光联动失败：", "Mode read; lighting link failed: ") +
+                     e.Message);
+                return false;
+            }
         }
 
         Label L(string t, int x, int y, int w, int h, Control p = null)
@@ -354,14 +737,21 @@ namespace OmenModeSwitcher
         {
             Text = T("OMEN 独立控制器", "OMEN Lite Control") + " v" + Application.ProductVersion;
             language.English = english;
+            RenderHotkey();
             lastLabel.Text = T("当前模式 · EC 回读", "Mode · EC readback");
+            performanceLabel.Text = T("狂暴标志", "Performance");
+            comfortLabel.Text = T("酷冷标志", "Comfort");
             refresh.Text = T("刷新状态", "Refresh");
             modeBox.Text = T("BIOS 性能策略", "BIOS Performance Policy");
             def.Text = T("默认", "Balanced");
             perf.Text = T("狂暴", "Performance");
             cool.Text = T("酷冷", "Comfort");
-            kb.Text = T("键盘四分区示意 · 点击选区，双击选色",
-                        "4-Zone keyboard · Click to select, double-click for color");
+            lightingLink.Text = T("灯光联动", "Link lighting to mode");
+            ReloadLightingSettings();
+            kb.Text = T("四分区键盘灯", "4-Zone Keyboard Lighting");
+            detailsTip.SetToolTip(
+                keyboard,
+                T("点击选区，双击选色", "Click to select a zone; double-click to choose a color."));
             keyboard.SetNames(Zones());
             UpdateZoneEditor();
             apply.Text = T("应用", "Apply");
@@ -391,6 +781,7 @@ namespace OmenModeSwitcher
             catch (Exception e)
             {
                 language.English = english;
+                RenderHotkey();
                 Fail(e);
             }
         }
@@ -411,18 +802,32 @@ namespace OmenModeSwitcher
             if (hardwareBusy)
                 return false;
             hardwareBusy = true;
+            hotkeyGeneration++;
+            if (hotkey != null)
+                hotkey.Blocked = true;
+            operationTime.Restart();
             SetHardwareControls(false);
             return true;
         }
 
         void SetHardwareControls(bool enabled)
         {
-            enableDriver.Enabled = modeBox.Enabled = apply.Enabled = refresh.Enabled = enabled;
+            enableDriver.Enabled = def.Enabled = perf.Enabled = cool.Enabled = apply.Enabled =
+                refresh.Enabled = enabled;
+            lightingLink.Enabled = enabled;
+            foreach (var choice in modePresets)
+                choice.Enabled = enabled && PresetStore.LightingEnabled;
         }
 
         async void EndHardwareOperation()
         {
-            await Task.Delay(1000);
+            // One-second minimum between user operations, not after every internal read.
+            int remaining = (int)Math.Max(0, 1000 - operationTime.ElapsedMilliseconds);
+            if (remaining > 0)
+                await Task.Delay(remaining);
+            hotkeyGeneration++;
+            if (hotkey != null)
+                hotkey.Blocked = false;
             hardwareBusy = false;
             if (!IsDisposed && !Disposing)
                 SetHardwareControls(true);
@@ -449,6 +854,8 @@ namespace OmenModeSwitcher
         async Task RefreshAllCore()
         {
             await RefreshMode();
+            if (await ApplyModeLighting())
+                return;
             try
             {
                 await RefreshKeyboard(true);
@@ -571,29 +978,30 @@ namespace OmenModeSwitcher
 
         void ShowState(PerformanceState state)
         {
+            SelectMode(state.Mode);
             SetPawnState(DriverState.Available);
             renderMode = () => ShowState(state);
             enableDriver.Visible = false;
-            ecDetails.Width = 601;
+            ecDetails.Width = 340;
             mode.Text = ModeName(state.Id);
             mode.ForeColor = state.Mode < 0 ? Color.DarkOrange : SystemColors.ControlText;
-            string performance = (state.F8 & 2) != 0 ? T("开启", "On") : T("关闭", "Off");
-            string comfort = (state.EC & 1) != 0 ? T("开启", "On") : T("关闭", "Off");
-            ecDetails.ForeColor = SystemColors.GrayText;
-            ecDetails.Text = T("狂暴标志：", "Performance flag: ") + performance +
-                             "    ·    F8 bit 1 = " + ((state.F8 >> 1) & 1) + "    ·    0x" +
-                             state.F8.ToString("X2") + Environment.NewLine +
-                             T("酷冷标志：", "Comfort flag: ") + comfort +
-                             "    ·    EC bit 0 = " + (state.EC & 1) + "    ·    0x" +
-                             state.EC.ToString("X2");
-            detailsTip.SetToolTip(
-                ecDetails,
-                T("从嵌入式控制器回读的 BIOS 模式标志。F8、EC 是寄存器地址，十六进制数为完整原值。",
-                  "BIOS mode flags read from the embedded controller. F8 and EC are register addresses; hex numbers show the full raw values."));
+            flagTable.Visible = true;
+            ecDetails.Visible = false;
+            performanceValue.Text = (state.F8 & 2) != 0 ? T("开启", "On") : T("关闭", "Off");
+            comfortValue.Text = (state.EC & 1) != 0 ? T("开启", "On") : T("关闭", "Off");
+            performanceRaw.Text =
+                "F8 bit 1 = " + ((state.F8 >> 1) & 1) + "   ·   0x" + state.F8.ToString("X2");
+            comfortRaw.Text =
+                "EC bit 0 = " + (state.EC & 1) + "   ·   0x" + state.EC.ToString("X2");
+            foreach (var label in new[] { performanceRaw, comfortRaw })
+                detailsTip.SetToolTip(
+                    label, T("EC 寄存器地址、模式位及完整十六进制值。",
+                             "EC register address, mode bit and full hexadecimal value."));
         }
 
         void RenderDriverState(DriverState state)
         {
+            SelectMode(-1);
             SetPawnState(state);
             renderMode = () => RenderDriverState(state);
             mode.Text = T("未知（无法回读）", "Readback unavailable");
@@ -604,7 +1012,10 @@ namespace OmenModeSwitcher
                 state == DriverState.UpdateRequired
                     ? T("更新硬件读取驱动", "Update readback driver")
                     : T("启用硬件读取（安装驱动）", "Enable readback (install driver)");
-            ecDetails.Width = enableDriver.Visible ? 356 : 601;
+            flagTable.Visible = false;
+            ecDetails.Visible = true;
+            ecDetails.Width = 340;
+            ecDetails.Height = enableDriver.Visible ? 24 : 48;
             ecDetails.ForeColor = SystemColors.GrayText;
             detailsTip.SetToolTip(ecDetails, null);
             ecDetails.Text =
@@ -637,11 +1048,15 @@ namespace OmenModeSwitcher
 
         void RenderReadFailure(Exception e)
         {
+            SelectMode(-1);
             renderMode = () => RenderReadFailure(e);
             mode.Text = T("未知（无法回读）", "Readback unavailable");
             mode.ForeColor = Color.DarkOrange;
             enableDriver.Visible = false;
-            ecDetails.Width = 601;
+            ecDetails.Width = 340;
+            flagTable.Visible = false;
+            ecDetails.Visible = true;
+            ecDetails.Height = 48;
             ecDetails.Text = T("模式回读失败", "Mode readback failed");
             detailsTip.SetToolTip(ecDetails, e.Message);
             Fail(e);
@@ -677,6 +1092,7 @@ namespace OmenModeSwitcher
             {
                 bool restart = await Task.Run(() => DriverSetup.Install());
                 await RefreshMode();
+                await ApplyModeLighting();
                 if (restart)
                     Warn(T(
                         "驱动已安装，需要重启 Windows；模式切换和键盘灯仍可用。",
@@ -713,32 +1129,11 @@ namespace OmenModeSwitcher
 
         async void Mode(byte value)
         {
-            if (!BeginHardwareOperation())
+            if (currentMode == value || !BeginHardwareOperation())
                 return;
             try
             {
-                await Task.Run(() => HpBios.SetMode(value));
-                try
-                {
-                    PerformanceState state =
-                        await Task.Run(() => HardwareStatus.WaitForMode(value));
-                    ShowState(state);
-                    if (state.Mode == value)
-                        Ok(T("BIOS 指令已接受，EC 回读确认：",
-                             "BIOS request accepted; EC confirmed: ") +
-                           ModeName(state.Id));
-                    else
-                        Warn(T("BIOS 指令已接受，但 EC 当前状态与请求不一致：",
-                               "BIOS request accepted, but EC differs from requested mode: ") +
-                             ModeName(state.Id));
-                }
-                catch (Exception e)
-                {
-                    ShowReadFailure(e);
-                    Warn(T("BIOS 指令已接受；无法确认实际状态：",
-                           "BIOS request accepted; actual state could not be confirmed: ") +
-                         e.Message);
-                }
+                await SwitchModeCore(value);
             }
             catch (Exception e)
             {
@@ -748,6 +1143,34 @@ namespace OmenModeSwitcher
             {
                 EndHardwareOperation();
             }
+        }
+
+        async Task SwitchModeCore(byte value)
+        {
+            msg.ForeColor = SystemColors.ControlText;
+            msg.Text = T("正在切换模式…", "Switching mode…");
+            await Task.Run(() => HpBios.SetMode(value));
+            try
+            {
+                PerformanceState state = await Task.Run(() => HardwareStatus.WaitForMode(value));
+                ShowState(state);
+                if (state.Mode == value)
+                    Ok(T("BIOS 指令已接受，EC 回读确认：",
+                         "BIOS request accepted; EC confirmed: ") +
+                       ModeName(state.Id));
+                else
+                    Warn(T("BIOS 指令已接受，但 EC 当前状态与请求不一致：",
+                           "BIOS request accepted, but EC differs from requested mode: ") +
+                         ModeName(state.Id));
+            }
+            catch (Exception e)
+            {
+                ShowReadFailure(e);
+                Warn(T("BIOS 指令已接受；无法确认实际状态：",
+                       "BIOS request accepted; actual state could not be confirmed: ") +
+                     e.Message);
+            }
+            await ApplyModeLighting();
         }
 
         void PaintZone(int i)
@@ -863,6 +1286,7 @@ namespace OmenModeSwitcher
             }
             savePreset.Enabled = deletePreset.Enabled =
                 selected != null && presets.Contains(selected);
+            ReloadLightingSettings();
         }
 
         KeyboardPreset CapturePreset(string name)
@@ -893,7 +1317,9 @@ namespace OmenModeSwitcher
                 var updated = CapturePreset(name);
                 var next = new List<KeyboardPreset>(presets);
                 next[next.IndexOf(selected)] = updated;
-                PresetStore.Save(next);
+                var bindings =
+                    PresetStore.ModePresets.Select(n => n == selected.Name ? name : n).ToArray();
+                PresetStore.Save(next, bindings);
                 presets = next;
                 ReloadPresetList(updated);
                 Ok(T("预设已保存：", "Preset saved: ") + name);
@@ -1031,7 +1457,32 @@ namespace OmenModeSwitcher
             Application.SetCompatibleTextRenderingDefault(false);
             try
             {
-                Application.Run(new MainForm());
+                using (var instance = new Mutex(false, @"Local\OMENLiteControl.UI"))
+                {
+                    bool owns;
+                    try
+                    {
+                        owns = instance.WaitOne(0);
+                    }
+                    catch (AbandonedMutexException)
+                    {
+                        owns = true;
+                    }
+                    if (!owns)
+                    {
+                        MessageBox.Show("程序已在运行。 / The app is already running.",
+                                        "OMEN Lite Control");
+                        return 0;
+                    }
+                    try
+                    {
+                        Application.Run(new MainForm());
+                    }
+                    finally
+                    {
+                        instance.ReleaseMutex();
+                    }
+                }
                 return 0;
             }
             catch (Exception e)

@@ -45,9 +45,15 @@ jobs:
           name: OMEN Lite Control ${{ github.ref_name }}
           prerelease: false
           body: |
-            - 新增 PawnIO 状态标记，显示可用、未安装、需更新或不可用，随刷新同步更新。
+            - 模式按钮保持当前状态，支持按模式联动灯光预设。
+            - 新增 OMEN 键和自定义快捷键，支持三模式循环切换及防重复触发。
+            - 加快模式切换和灯光应用，修复 EC 短暂不稳定时的回读失败。
+            - 优化中英文布局、状态显示和快捷键设置。
 
-            - Add a PawnIO status indicator showing ready, not installed, update needed or unavailable, updated on refresh.
+            - Keep the current mode selected and link lighting presets to modes.
+            - Add OMEN/custom hotkeys for mode cycling, with repeat protection.
+            - Speed up mode and lighting changes; retry transient EC read failures.
+            - Refine bilingual layout, status display and inline hotkey settings.
           files: |
             dist/*.zip
             dist/SHA256SUMS.txt
