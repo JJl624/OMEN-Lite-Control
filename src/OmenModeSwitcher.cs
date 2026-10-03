@@ -11,9 +11,9 @@ using System.Windows.Forms;
 
 [assembly:AssemblyTitle("OMEN Lite Control")]
 [assembly:AssemblyDescription("Lightweight controls for HP OMEN 15-dc0xxx (84DB)")]
-[assembly:AssemblyVersion("0.4.3.0")]
-[assembly:AssemblyFileVersion("0.4.3.0")]
-[assembly:AssemblyInformationalVersion("0.4.3")]
+[assembly:AssemblyVersion("0.4.4.0")]
+[assembly:AssemblyFileVersion("0.4.4.0")]
+[assembly:AssemblyInformationalVersion("0.4.4")]
 namespace OmenModeSwitcher
 {
     static class HpBios

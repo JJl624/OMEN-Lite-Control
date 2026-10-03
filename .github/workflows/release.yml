@@ -45,11 +45,9 @@ jobs:
           name: OMEN Lite Control ${{ github.ref_name }}
           prerelease: false
           body: |
-            - 移除旧版用户目录配置导入，设置仅保存在程序目录内。
-            - 语言切换改为中文 / EN 左右开关。
+            - 新增 PawnIO 状态标记，显示可用、未安装、需更新或不可用，随刷新同步更新。
 
-            - Remove legacy user-profile imports; settings stay inside the application directory.
-            - Replace the language button with a Chinese / EN switch.
+            - Add a PawnIO status indicator showing ready, not installed, update needed or unavailable, updated on refresh.
           files: |
             dist/*.zip
             dist/SHA256SUMS.txt
