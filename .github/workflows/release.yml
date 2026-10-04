@@ -45,15 +45,17 @@ jobs:
           name: OMEN Lite Control ${{ github.ref_name }}
           prerelease: false
           body: |
-            - 模式按钮保持当前状态，支持按模式联动灯光预设。
-            - 新增 OMEN 键和自定义快捷键，支持三模式循环切换及防重复触发。
-            - 加快模式切换和灯光应用，修复 EC 短暂不稳定时的回读失败。
-            - 优化中英文布局、状态显示和快捷键设置。
+            - 新增可选最小化到托盘、托盘模式切换与退出。
+            - 新增随模式变色的图标，PawnIO 悬浮详情显示版本与路径。
+            - 设置统一保存到 config.xml，自动迁移原配置。
+            - 加强 EC 回读重试，切换模式时保留灯光预设选择。
+            - 优化窗口恢复重绘与布局，禁用快捷键下拉框滚轮切换。
 
-            - Keep the current mode selected and link lighting presets to modes.
-            - Add OMEN/custom hotkeys for mode cycling, with repeat protection.
-            - Speed up mode and lighting changes; retry transient EC read failures.
-            - Refine bilingual layout, status display and inline hotkey settings.
+            - Add optional minimize to tray, with mode switching and exit.
+            - Add mode-colored icons and PawnIO version/path tooltips.
+            - Consolidate settings into config.xml and migrate existing settings.
+            - Improve EC readback retries and preserve lighting preset selection during mode changes.
+            - Improve window restoration and layout; disable mouse-wheel changes in the hotkey selector.
           files: |
             dist/*.zip
             dist/SHA256SUMS.txt

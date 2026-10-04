@@ -8,7 +8,7 @@ using System.Text;
 using System.Threading;
 using Microsoft.Win32.SafeHandles;
 
-namespace OmenModeSwitcher
+namespace OmenLiteControl
 {
     // Share one process-wide lane for WMI commands and complete EC snapshots.
     // Serialize all access. Space writes by one second; reads only need a short gap.
@@ -324,9 +324,9 @@ namespace OmenModeSwitcher
                 {
                     // A busy EC or unstable snapshot is transient, especially during a mode change.
                     // Release our mutex, then retry a whole snapshot, never a fabricated byte.
-                    if (attempt == 2)
+                    if (attempt == 4)
                         throw;
-                    Thread.Sleep(50);
+                    Thread.Sleep(50 * (attempt + 1));
                 }
             }
         }
@@ -347,8 +347,8 @@ namespace OmenModeSwitcher
                     catch (AbandonedMutexException)
                     {
                         held = true;
-                        throw new InvalidOperationException(
-                            "Previous EC client exited during access; refresh again.");
+                        throw new TimeoutException(
+                            "Previous EC client exited during access; retrying after recovery.");
                     }
                     if (!held)
                         throw new TimeoutException("EC is busy with another application.");
@@ -382,7 +382,7 @@ namespace OmenModeSwitcher
                 {
                     lastError = ex;
                 }
-            } while (timer.ElapsedMilliseconds < 1500);
+            } while (timer.ElapsedMilliseconds < 2500);
             if (lastError != null)
                 throw lastError;
             return state;

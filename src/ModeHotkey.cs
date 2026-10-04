@@ -7,7 +7,7 @@ using System.Threading;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace OmenModeSwitcher
+namespace OmenLiteControl
 {
     sealed class HotkeySettings
     {
@@ -40,28 +40,12 @@ namespace OmenModeSwitcher
 
         public static HotkeySettings Load()
         {
-            var settings = new HotkeySettings();
-            string path = UserData.File("mode-hotkey.txt");
-            if (!File.Exists(path))
-                return settings;
-            string[] lines = File.ReadAllLines(path);
-            int key;
-            if (lines.Length == 2 && Int32.TryParse(lines[1], out key) && IsValid((Keys)key))
-            {
-                settings.Key = (Keys)key;
-                settings.Enabled = lines[0] == "1";
-            }
-            return settings;
+            return ConfigStore.GetHotkey();
         }
 
         public void Save()
         {
-            string path = UserData.File("mode-hotkey.txt"), temp = path + ".tmp";
-            File.WriteAllLines(temp, new[] { Enabled ? "1" : "0", ((int)Key).ToString() });
-            if (File.Exists(path))
-                File.Replace(temp, path, null);
-            else
-                File.Move(temp, path);
+            ConfigStore.SetHotkey(this);
         }
     }
 

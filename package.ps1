@@ -27,13 +27,13 @@ OMEN Lite Control — HP 84DB / BIOS F.19
 
 完整解压，以管理员身份运行 OMEN-Lite-Control.exe。
 首次回读性能状态时，按界面提示安装驱动。安装兼容版本的 PawnIO 后可删除 driver 文件夹；需通过程序安装或更新驱动时再恢复。
-键盘选色后点击应用；设置仅保存在程序目录的 data 文件夹。
-可开启模式灯光联动；快捷键支持 OMEN 键或直接录入组合键，程序需保持运行。循环切换需要 PawnIO 回读。
+键盘选色后点击应用；设置仅保存在程序目录的 data/config.xml。
+可开启模式灯光联动；快捷键支持 OMEN 键或直接录入组合键，程序需保持运行。循环切换需要 PawnIO 回读。可勾选最小化到托盘；双击托盘恢复，右键切换模式或退出。
 
 Extract all files and run OMEN-Lite-Control.exe as administrator.
 Install the driver from the app when prompted for mode readback. After compatible PawnIO is installed, the driver folder can be deleted; restore it only to install or update the driver from the app.
-Choose keyboard colors, then click Apply. Settings are stored only in the app directory’s data folder.
-Optional mode-linked lighting and OMEN/custom hotkeys are available. Keep the app running; hotkey cycling requires PawnIO readback.
+Choose keyboard colors, then click Apply. Settings are stored only in the app directory’s data/config.xml.
+Optional mode-linked lighting and OMEN/custom hotkeys are available. Keep the app running; hotkey cycling requires PawnIO readback. Minimize to tray is optional; double-click to restore, or right-click to switch modes or exit.
 
 https://github.com/JJl624/OMEN-Lite-Control
 '@

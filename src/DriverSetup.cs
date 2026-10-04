@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -6,7 +6,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using Microsoft.Win32;
 
-namespace OmenModeSwitcher
+namespace OmenLiteControl
 {
     internal enum DriverState
     {
@@ -16,11 +16,59 @@ namespace OmenModeSwitcher
         Unavailable
     }
 
+    internal sealed class DriverInfo
+    {
+        internal uint? Version;
+        internal string InstalledVersion, InstallLocation, DriverPath, MetadataError;
+        internal int Error;
+
+        internal static string VersionText(uint version)
+        {
+            return (version >> 16) + "." + ((version >> 8) & 255) + "." + (version & 255);
+        }
+
+        internal static string ResolveDriverPath(string value)
+        {
+            string path = Environment.ExpandEnvironmentVariables(value ?? "").Trim().Trim('"');
+            const string root = @"\SystemRoot\";
+            if (path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                                    path.Substring(root.Length));
+            if (path.StartsWith(@"\??\", StringComparison.Ordinal))
+                path = path.Substring(4);
+            if (path.StartsWith(@"System32\", StringComparison.OrdinalIgnoreCase))
+                path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                                    path);
+            return path;
+        }
+
+        internal string Detail(bool english)
+        {
+            string missing = english ? "Unavailable" : "未读取到";
+            string text = (english ? "Driver version (device): " : "驱动版本（设备回读）：") +
+                          (Version.HasValue ? VersionText(Version.Value) : missing) +
+                          Environment.NewLine + (english ? "Installed version: " : "安装版本：") +
+                          (String.IsNullOrEmpty(InstalledVersion) ? missing : InstalledVersion) +
+                          Environment.NewLine + (english ? "Installation folder: " : "安装目录：") +
+                          (String.IsNullOrEmpty(InstallLocation) ? missing : InstallLocation) +
+                          Environment.NewLine + (english ? "Driver file: " : "驱动文件：") +
+                          (String.IsNullOrEmpty(DriverPath) ? missing : DriverPath);
+            if (Error != 0)
+                text += Environment.NewLine + (english ? "Device error: " : "设备访问错误：") +
+                        Error + " — " + new Win32Exception(Error).Message;
+            if (!String.IsNullOrEmpty(MetadataError))
+                text += Environment.NewLine + (english ? "Installation details: " : "安装信息：") +
+                        MetadataError;
+            return text;
+        }
+    }
+
     internal static class DriverSetup
     {
         internal const string InstallerHash =
             "1F519A22E47187F70A1379A48CA604981C4FCF694F4E65B734AAA74A9FBA3032";
         internal const uint MinimumVersion = 0x00020200;
+        internal static DriverInfo LastProbe;
 
         internal static DriverState Classify(bool open, uint version, int error, bool registered)
         {
@@ -36,9 +84,41 @@ namespace OmenModeSwitcher
             int error;
             uint version;
             bool open = PawnEcPorts.Probe(out version, out error);
-            bool registered;
-            using (var key = Registry.LocalMachine.OpenSubKey(
-                       @"SYSTEM\CurrentControlSet\Services\PawnIO")) registered = key != null;
+            var info = new DriverInfo { Version = open ? (uint?)version : null, Error = error };
+            bool registered = true; // An unreadable registry must not be reported as absent.
+            try
+            {
+                using (var key = Registry.LocalMachine.OpenSubKey(
+                           @"SYSTEM\CurrentControlSet\Services\PawnIO"))
+                {
+                    registered = key != null;
+                    if (key != null)
+                        info.DriverPath = DriverInfo.ResolveDriverPath(
+                            Convert.ToString(key.GetValue("ImagePath")));
+                }
+                using (var key = Registry.LocalMachine.OpenSubKey(
+                           @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO"))
+                {
+                    if (key != null)
+                    {
+                        info.InstalledVersion = Convert.ToString(key.GetValue("DisplayVersion"));
+                        info.InstallLocation = Convert.ToString(key.GetValue("InstallLocation"));
+                    }
+                }
+            }
+            catch (System.Security.SecurityException e)
+            {
+                info.MetadataError = e.Message;
+            }
+            catch (UnauthorizedAccessException e)
+            {
+                info.MetadataError = e.Message;
+            }
+            catch (IOException e)
+            {
+                info.MetadataError = e.Message;
+            }
+            LastProbe = info;
             return Classify(open, version, error, registered);
         }
 

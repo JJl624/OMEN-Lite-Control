@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace OmenModeSwitcher
+namespace OmenLiteControl
 {
     // A four-zone schematic, not a per-key lighting controller.
     sealed class KeyboardLightingControl : Control
