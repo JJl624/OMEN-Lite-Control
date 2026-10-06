@@ -1,6 +1,5 @@
 ﻿using System;
 using System.ComponentModel;
-using System.IO;
 using System.Management;
 using System.Diagnostics;
 using System.Threading;

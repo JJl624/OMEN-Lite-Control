@@ -18,22 +18,22 @@ $stream = [IO.File]::Open($ZipPath, [IO.FileMode]::Create)
 try {
     $archive = New-Object IO.Compression.ZipArchive($stream, [IO.Compression.ZipArchiveMode]::Create)
     try {
-        foreach ($name in @('OMEN-Lite-Control.exe','driver/PawnIO_setup.exe')) {
+        foreach ($name in @('OMEN-Lite-Control.exe')) {
             Add-File $archive (Join-Path $PSScriptRoot $name) $name
         }
         Add-Text $archive 'LICENSE' $license
         $usage = @'
 OMEN Lite Control — HP 84DB / BIOS F.19
 
-完整解压，以管理员身份运行 OMEN-Lite-Control.exe。
-首次回读性能状态时，按界面提示安装驱动。安装兼容版本的 PawnIO 后可删除 driver 文件夹；需通过程序安装或更新驱动时再恢复。
-键盘选色后点击应用；设置仅保存在程序目录的 data/config.xml。
-可开启模式灯光联动；快捷键支持 OMEN 键或直接录入组合键，程序需保持运行。循环切换需要 PawnIO 回读。可勾选最小化到托盘；双击托盘恢复，右键切换模式或退出。
+完整解压，以管理员身份运行 OMEN-Lite-Control.exe，无需安装附加驱动。
+记录模式仅代表最后一次被 BIOS 接受的请求，不是实际硬件状态；可再次点击记录模式重新应用。
+快捷键按记录循环；灯光联动仅在主动切换模式时应用。启动和刷新不会按旧记录自动写入灯光。
+设置保存在 data/config.xml。键盘颜色通过 HP WMI 读取；可选最小化到托盘。
 
-Extract all files and run OMEN-Lite-Control.exe as administrator.
-Install the driver from the app when prompted for mode readback. After compatible PawnIO is installed, the driver folder can be deleted; restore it only to install or update the driver from the app.
-Choose keyboard colors, then click Apply. Settings are stored only in the app directory’s data/config.xml.
-Optional mode-linked lighting and OMEN/custom hotkeys are available. Keep the app running; hotkey cycling requires PawnIO readback. Minimize to tray is optional; double-click to restore, or right-click to switch modes or exit.
+Extract and run OMEN-Lite-Control.exe as administrator. No additional driver is required.
+The recorded mode is the last request accepted by BIOS, not hardware readback. Select it again to reapply.
+Hotkeys cycle the record; linked lighting applies only on explicit mode changes, not startup or refresh.
+Settings are stored in data/config.xml. Keyboard colors use HP WMI. Minimize to tray is optional.
 
 https://github.com/JJl624/OMEN-Lite-Control
 '@

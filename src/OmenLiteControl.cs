@@ -13,9 +13,9 @@ using System.Windows.Forms;
 
 [assembly:AssemblyTitle("OMEN Lite Control")]
 [assembly:AssemblyDescription("Lightweight controls for HP OMEN 15-dc0xxx (84DB)")]
-[assembly:AssemblyVersion("0.6.0.0")]
-[assembly:AssemblyFileVersion("0.6.0.0")]
-[assembly:AssemblyInformationalVersion("0.6.0")]
+[assembly:AssemblyVersion("0.7.0.0")]
+[assembly:AssemblyFileVersion("0.7.0.0")]
+[assembly:AssemblyInformationalVersion("0.7.0")]
 namespace OmenLiteControl
 {
     static class HpBios
@@ -70,7 +70,7 @@ namespace OmenLiteControl
         {
             if (m > 2)
                 throw new ArgumentOutOfRangeException("m");
-            HardwareStatus.RequireSupportedBoard();
+            HardwarePlatform.RequireSupportedBoard();
             Call("hpqBIOSInt0", 0x20008, 0x1A, new byte[] { 0xFF, m, 0, 0 });
         }
 
@@ -223,7 +223,6 @@ namespace OmenLiteControl
 
     sealed class MainForm : Form
     {
-        Action renderMode;
         CheckBox minimizeToTray;
         bool trayEnabled, updatingTray, restoringFromTray;
         NotifyIcon trayIcon;
@@ -231,28 +230,25 @@ namespace OmenLiteControl
         readonly MenuItem[] trayModes = new MenuItem[3];
         MenuItem trayExit;
         readonly ModeIcons modeIcons = new ModeIcons();
-        bool english, installing, biosColorsLoaded, biosReadFailed;
+        bool english, biosColorsLoaded, biosReadFailed;
         volatile bool hardwareBusy;
         readonly Stopwatch operationTime = new Stopwatch();
         readonly KeyboardPreset biosPreset =
             new KeyboardPreset { Brightness = new[] { 100, 100, 100, 100 } };
-        Label lastLabel, mode, ecDetails;
-        TableLayoutPanel flagTable;
-        Label performanceLabel, performanceValue, performanceRaw, comfortLabel, comfortValue,
-            comfortRaw;
+        Label lastLabel, mode;
         CheckBox hotkeyEnabled;
         ComboBox hotkeyChoice;
         TextBox hotkeyEdit;
+        Panel headerDivider;
         HotkeySettings hotkeySettings;
         ModeHotkey hotkey;
         bool updatingHotkey, editingHotkey;
         volatile int hotkeyGeneration;
         int hotkeyPending;
-        ToolStripStatusLabel msg, pawnIndicator;
-        DriverState? pawnState;
+        ToolStripStatusLabel msg;
         ToolTip detailsTip = new ToolTip();
         GroupBox modeBox, kb;
-        Button enableDriver, refresh, newPreset, apply, savePreset, deletePreset;
+        Button refresh, newPreset, apply, savePreset, deletePreset;
         RadioButton def, perf, cool;
         CheckBox lightingLink;
         readonly ComboBox[] modePresets = new ComboBox[3];
@@ -290,7 +286,7 @@ namespace OmenLiteControl
             DoubleBuffered = true;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer,
                      true);
-            ClientSize = new Size(650, 728);
+            ClientSize = new Size(650, 680);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             Icon = modeIcons.ForMode(-1);
@@ -304,28 +300,13 @@ namespace OmenLiteControl
             mode.Font = new Font(Font, FontStyle.Bold);
             refresh = B("", 274, 12, 90, 32);
             refresh.Click += (s, e) => RefreshAll();
-            ecDetails = L("", 22, 50, 340, 48);
-            flagTable = new TableLayoutPanel { ColumnCount = 3, RowCount = 2 };
-            flagTable.SetBounds(22, 50, 340, 48);
-            flagTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 106));
-            flagTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));
-            flagTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            flagTable.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-            flagTable.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-            Controls.Add(flagTable);
-            performanceLabel = FlagCell(0, 0);
-            performanceValue = FlagCell(1, 0);
-            performanceRaw = FlagCell(2, 0);
-            comfortLabel = FlagCell(0, 1);
-            comfortValue = FlagCell(1, 1);
-            comfortRaw = FlagCell(2, 1);
-            var divider = new Panel { BackColor = SystemColors.ControlDark };
-            divider.SetBounds(373, 12, 1, 134);
-            Controls.Add(divider);
+            headerDivider = new Panel { BackColor = SystemColors.ControlDark };
+            headerDivider.SetBounds(373, 12, 1, 84);
+            Controls.Add(headerDivider);
             var settings = new Panel();
-            settings.SetBounds(394, 54, 230, 92);
+            settings.SetBounds(394, 46, 230, 52);
             minimizeToTray = new CheckBox { AutoSize = false };
-            minimizeToTray.SetBounds(0, 0, 230, 28);
+            minimizeToTray.SetBounds(0, 0, 230, 24);
             settings.Controls.Add(minimizeToTray);
             trayEnabled = ConfigStore.Get("minimizeToTray", "false") == "true";
             minimizeToTray.Checked = trayEnabled;
@@ -333,10 +314,10 @@ namespace OmenLiteControl
             Controls.Add(settings);
             hotkeyEnabled =
                 new CheckBox { AutoSize = false, TextAlign = ContentAlignment.MiddleLeft };
-            hotkeyEnabled.SetBounds(0, 28, 100, 28);
+            hotkeyEnabled.SetBounds(0, 24, 100, 28);
             settings.Controls.Add(hotkeyEnabled);
             hotkeyChoice = new HotkeyComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
-            hotkeyChoice.SetBounds(116, 28, 114, 28);
+            hotkeyChoice.SetBounds(116, 24, 114, 28);
             settings.Controls.Add(hotkeyChoice);
             hotkeyChoice.SelectedIndexChanged += (sender, args) =>
             {
@@ -350,7 +331,7 @@ namespace OmenLiteControl
                                                                   : hotkeySettings.Key));
             };
             hotkeyEdit = new TextBox { ReadOnly = true, TextAlign = HorizontalAlignment.Center };
-            hotkeyEdit.SetBounds(0, 64, 230, 26);
+            hotkeyEdit.SetBounds(0, 56, 230, 26);
             settings.Controls.Add(hotkeyEdit);
             hotkeyEdit.Enter += (sender, args) => BeginHotkeyCapture();
             hotkeyEdit.Leave += (sender, args) => FinishHotkeyCapture(hotkeySettings.Key);
@@ -365,10 +346,7 @@ namespace OmenLiteControl
             hotkeyEnabled.CheckedChanged += (sender, args) =>
                 SaveHotkey(hotkeyEnabled.Checked, hotkeySettings.Key);
             hotkeySettings = HotkeySettings.Load();
-            enableDriver = B("", 22, 76, 340, 26);
-            enableDriver.Visible = false;
-            enableDriver.Click += (s, e) => InstallDriver();
-            modeBox = G("", 20, 156, 610, 122);
+            modeBox = G("", 20, 108, 610, 122);
             def = ModeButton(18);
             perf = ModeButton(213);
             cool = ModeButton(408);
@@ -392,7 +370,7 @@ namespace OmenLiteControl
                 modePresets[i] = choice;
                 choice.SelectedIndexChanged += (sender, args) => SaveLightingSettings();
             }
-            kb = G("", 20, 288, 610, 407);
+            kb = G("", 20, 240, 610, 407);
 
             keyboard = new KeyboardLightingControl();
             keyboard.SetBounds(15, 26, 575, 190);
@@ -436,11 +414,6 @@ namespace OmenLiteControl
                                              AutoToolTip = false };
             msg.TextChanged += (sender, args) => msg.ToolTipText = msg.Text;
             statusBar.Items.Add(msg);
-            pawnIndicator =
-                new ToolStripStatusLabel { BorderSides = ToolStripStatusLabelBorderSides.Left,
-                                           Padding = new Padding(10, 0, 2, 0),
-                                           AutoToolTip = false };
-            statusBar.Items.Add(pawnIndicator);
             Controls.Add(statusBar);
             trayMenu = new ContextMenu();
             for (int i = 0; i < 3; i++)
@@ -509,13 +482,13 @@ namespace OmenLiteControl
             {
                 trayModes[i].Text = names[i];
                 trayModes[i].Checked = currentMode == i;
-                trayModes[i].Enabled = !hardwareBusy && currentMode != i;
+                trayModes[i].Enabled = !hardwareBusy;
             }
             trayExit.Text = T("退出", "Exit");
-            trayExit.Enabled = !hardwareBusy && !installing;
+            trayExit.Enabled = !hardwareBusy;
             trayIcon.Icon = modeIcons.ForMode(currentMode);
             trayIcon.Text =
-                "OMEN Lite Control · " +
+                "OMEN Lite Control · " + T("记录：", "Recorded: ") +
                 (currentMode >= 0 && currentMode < 3 ? names[currentMode] : T("未知", "Unknown"));
         }
 
@@ -556,13 +529,25 @@ namespace OmenLiteControl
             RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, 0x0585);
         }
 
-        Label FlagCell(int column, int row)
+        void LayoutHeader()
         {
-            var cell = new Label { Dock = DockStyle.Fill, Margin = Padding.Empty,
-                                   TextAlign = ContentAlignment.MiddleLeft,
-                                   ForeColor = SystemColors.GrayText };
-            flagTable.Controls.Add(cell, column, row);
-            return cell;
+            if (modeBox == null || kb == null)
+                return;
+            int top = hotkeySettings.Key == Keys.None ? 108 : 140;
+            SuspendLayout();
+            try
+            {
+                hotkeyEdit.Parent.Height = top - 56;
+                headerDivider.Height = top - 24;
+                modeBox.Top = top;
+                kb.Top = modeBox.Bottom + 10;
+                if (ClientSize.Height != kb.Bottom + 33)
+                    ClientSize = new Size(ClientSize.Width, kb.Bottom + 33);
+            }
+            finally
+            {
+                ResumeLayout(true);
+            }
         }
 
         void RenderHotkey()
@@ -575,6 +560,7 @@ namespace OmenLiteControl
             hotkeyChoice.Items.Add(T("自定义", "Custom"));
             hotkeyChoice.SelectedIndex = hotkeySettings.Key == Keys.None ? 0 : 1;
             hotkeyEdit.Visible = hotkeySettings.Key != Keys.None;
+            LayoutHeader();
             hotkeyChoice.Enabled = hotkeyEdit.Enabled = hotkeySettings.Enabled;
             hotkeyEdit.Text = HotkeySettings.Display(hotkeySettings.Key);
             detailsTip.SetToolTip(hotkeyEdit,
@@ -698,19 +684,11 @@ namespace OmenLiteControl
                 return;
             try
             {
-                msg.Text = T("正在读取当前模式…", "Reading current mode…");
-                var state = await Task.Run(() => HardwareStatus.Read());
-                ShowState(state);
-                if (state.Mode < 0)
-                {
-                    Warn(T("模式标志冲突，未切换。", "Conflicting mode flags; no switch made."));
-                    return;
-                }
-                await SwitchModeCore((byte)((state.Mode + 1) % 3));
+                await SwitchModeCore((byte)((currentMode + 1) % 3));
             }
             catch (Exception e)
             {
-                ShowReadFailure(e);
+                Fail(e);
             }
             finally
             {
@@ -813,7 +791,8 @@ namespace OmenLiteControl
             }
             catch (Exception e)
             {
-                Warn(T("模式已读取，灯光联动失败：", "Mode read; lighting link failed: ") +
+                Warn(T("模式请求已接受，灯光联动失败：",
+                       "Mode request accepted; lighting link failed: ") +
                      e.Message);
                 return false;
             }
@@ -851,12 +830,12 @@ namespace OmenLiteControl
             minimizeToTray.Text = T("最小化到托盘", "Minimize to tray");
             RenderTray();
             RenderHotkey();
-            lastLabel.Text = T("当前模式", "Mode");
-            detailsTip.SetToolTip(lastLabel, T("通过 EC 回读当前 BIOS 性能模式。",
-                                               "Current BIOS performance mode read from the EC."));
+            lastLabel.Text = T("记录模式", "Recorded");
+            detailsTip.SetToolTip(
+                lastLabel,
+                T("最后一次被 BIOS 接受的模式请求，不是硬件回读。重启或其他软件可能改变实际模式。",
+                  "Last mode request accepted by BIOS, not hardware readback. Restarting or other software may change the actual mode."));
             detailsTip.SetToolTip(mode, detailsTip.GetToolTip(lastLabel));
-            performanceLabel.Text = T("狂暴标志", "Performance");
-            comfortLabel.Text = T("酷冷标志", "Comfort");
             refresh.Text = T("刷新状态", "Refresh");
             modeBox.Text = T("BIOS 性能策略", "BIOS Performance Policy");
             def.Text = T("默认", "Balanced");
@@ -881,9 +860,7 @@ namespace OmenLiteControl
             msg.ForeColor = SystemColors.ControlText;
             msg.Text = T("就绪", "Ready");
             UpdateBiosPresetName();
-            RenderPawnIndicator();
-            if (renderMode != null)
-                renderMode();
+            ShowRecordedMode();
         }
 
         void SwitchLanguage()
@@ -910,7 +887,7 @@ namespace OmenLiteControl
                 return T("狂暴模式", "Performance");
             if (id == "comfort" || id == "酷冷模式")
                 return T("酷冷模式", "Comfort");
-            return T("未知 / 标志冲突", "Unknown / conflicting flags");
+            return T("无记录", "No record");
         }
 
         bool BeginHardwareOperation()
@@ -928,8 +905,7 @@ namespace OmenLiteControl
 
         void SetHardwareControls(bool enabled)
         {
-            enableDriver.Enabled = def.Enabled = perf.Enabled = cool.Enabled = apply.Enabled =
-                refresh.Enabled = enabled;
+            def.Enabled = perf.Enabled = cool.Enabled = apply.Enabled = refresh.Enabled = enabled;
             lightingLink.Enabled = enabled;
             RenderTray();
             foreach (var choice in modePresets)
@@ -970,9 +946,7 @@ namespace OmenLiteControl
 
         async Task RefreshAllCore()
         {
-            await RefreshMode();
-            if (await ApplyModeLighting(true))
-                return;
+            ShowRecordedMode();
             try
             {
                 await RefreshKeyboard(true);
@@ -1054,201 +1028,23 @@ namespace OmenLiteControl
             presetName.Text = preset.Name;
         }
 
-        void SetPawnState(DriverState? state)
+        void ShowRecordedMode()
         {
-            pawnState = state;
-            RenderPawnIndicator();
-        }
-
-        void RenderPawnIndicator()
-        {
-            string status;
-            Color color;
-            switch (pawnState)
-            {
-            case DriverState.Available:
-                status = T("可用", "Ready");
-                color = Color.DarkGreen;
-                break;
-            case DriverState.Missing:
-                status = T("未安装", "Not installed");
-                color = SystemColors.GrayText;
-                break;
-            case DriverState.UpdateRequired:
-                status = T("需更新", "Update needed");
-                color = Color.DarkOrange;
-                break;
-            case DriverState.Unavailable:
-                status = T("不可用", "Unavailable");
-                color = Color.DarkRed;
-                break;
-            default:
-                status = T("未检测", "Not checked");
-                color = SystemColors.GrayText;
-                break;
-            }
-            pawnIndicator.Text = "● PawnIO: " + status;
-            pawnIndicator.ForeColor = color;
-            var info = DriverSetup.LastProbe;
-            pawnIndicator.ToolTipText =
-                pawnState.HasValue && info != null ? info.Detail(english) : status;
-            pawnIndicator.AccessibleName = pawnIndicator.Text;
-        }
-
-        void ShowState(PerformanceState state)
-        {
-            SelectMode(state.Mode);
-            SetPawnState(DriverState.Available);
-            renderMode = () => ShowState(state);
-            enableDriver.Visible = false;
-            ecDetails.Width = 340;
-            mode.Text = ModeName(state.Id);
-            mode.ForeColor = state.Mode < 0 ? Color.DarkOrange : SystemColors.ControlText;
-            flagTable.Visible = true;
-            ecDetails.Visible = false;
-            performanceValue.Text = (state.F8 & 2) != 0 ? T("开启", "On") : T("关闭", "Off");
-            comfortValue.Text = (state.EC & 1) != 0 ? T("开启", "On") : T("关闭", "Off");
-            performanceRaw.Text =
-                "F8 bit 1 = " + ((state.F8 >> 1) & 1) + "   ·   0x" + state.F8.ToString("X2");
-            comfortRaw.Text =
-                "EC bit 0 = " + (state.EC & 1) + "   ·   0x" + state.EC.ToString("X2");
-            foreach (var label in new[] { performanceRaw, comfortRaw })
-                detailsTip.SetToolTip(
-                    label, T("EC 寄存器地址、模式位及完整十六进制值。",
-                             "EC register address, mode bit and full hexadecimal value."));
-        }
-
-        void RenderDriverState(DriverState state)
-        {
-            SelectMode(-1);
-            SetPawnState(state);
-            renderMode = () => RenderDriverState(state);
-            mode.Text = T("未知（无法回读）", "Readback unavailable");
-            mode.ForeColor = Color.DarkOrange;
-            enableDriver.Visible =
-                state == DriverState.Missing || state == DriverState.UpdateRequired;
-            enableDriver.Text =
-                state == DriverState.UpdateRequired
-                    ? T("更新硬件读取驱动", "Update readback driver")
-                    : T("启用硬件读取（安装驱动）", "Enable readback (install driver)");
-            flagTable.Visible = false;
-            ecDetails.Visible = true;
-            ecDetails.Width = 340;
-            ecDetails.Height = enableDriver.Visible ? 24 : 48;
-            ecDetails.ForeColor = SystemColors.GrayText;
-            detailsTip.SetToolTip(ecDetails, null);
-            ecDetails.Text =
-                state == DriverState.Missing ? T("未安装读取组件；模式切换和键盘灯仍可用。",
-                                                 "Driver needed for readback. Controls still work.")
-                : state == DriverState.UpdateRequired
-                    ? T("读取驱动需要更新；仅在点击后更新。",
-                        "Update needed for hardware readback.")
-                    : T("读取驱动暂不可用。请确认管理员权限，或重启后刷新。",
-                        "Readback driver unavailable. Run as administrator, or restart and refresh.");
-        }
-
-        async Task RefreshMode()
-        {
-            try
-            {
-                SetPawnState(null);
-                DriverState state = await Task.Run(() => DriverSetup.Probe());
-                SetPawnState(state);
-                if (state == DriverState.Available)
-                    ShowState(await Task.Run(() => HardwareStatus.Read()));
-                else
-                    RenderDriverState(state);
-            }
-            catch (Exception e)
-            {
-                ShowReadFailure(e);
-            }
-        }
-
-        void RenderReadFailure(Exception e)
-        {
-            SelectMode(-1);
-            renderMode = () => RenderReadFailure(e);
-            mode.Text = T("未知（无法回读）", "Readback unavailable");
-            mode.ForeColor = Color.DarkOrange;
-            enableDriver.Visible = false;
-            ecDetails.Width = 340;
-            flagTable.Visible = false;
-            ecDetails.Visible = true;
-            ecDetails.Height = 48;
-            ecDetails.Text = T("模式回读失败", "Mode readback failed");
-            detailsTip.SetToolTip(ecDetails, e.Message);
-            Fail(e);
-        }
-
-        void ShowReadFailure(Exception e)
-        {
-            RenderReadFailure(e);
-            if (e is NotSupportedException)
-                return;
-            try
-            {
-                DriverState state = DriverSetup.Probe();
-                SetPawnState(state);
-                if (state != DriverState.Available)
-                    RenderDriverState(state);
-            }
-            catch
-            {
-            }
-        }
-
-        async void InstallDriver()
-        {
-            if (!BeginHardwareOperation())
-                return;
-            installing = true;
-            msg.ForeColor = SystemColors.ControlText;
-            msg.Text = T(
-                "正在安装签名读取驱动，仅需一次；不会自动重启。",
-                "Installing the signed readback driver once. Windows will not restart automatically.");
-            try
-            {
-                bool restart = await Task.Run(() => DriverSetup.Install());
-                await RefreshMode();
-                await ApplyModeLighting();
-                if (restart)
-                    Warn(T(
-                        "驱动已安装，需要重启 Windows；模式切换和键盘灯仍可用。",
-                        "Driver installed. Restart Windows to enable readback; mode and lighting controls still work."));
-                else if (enableDriver.Visible)
-                    Warn(T("驱动尚未就绪，请稍后刷新状态。",
-                           "Driver is not ready; refresh again shortly."));
-                else
-                    Ok(T("驱动已就绪；以后直接运行，无需再次安装。",
-                         "Driver ready. Future launches need no installation."));
-            }
-            catch (Exception e)
-            {
-                ShowReadFailure(e);
-                Fail(e);
-            }
-            finally
-            {
-                installing = false;
-                EndHardwareOperation();
-            }
-        }
-
-        protected override void OnFormClosing(FormClosingEventArgs e)
-        {
-            if (installing && e.CloseReason == CloseReason.UserClosing)
-            {
-                e.Cancel = true;
-                Warn(T("正在准备读取组件，请等待安装结束。",
-                       "Please wait for driver setup to finish."));
-            }
-            base.OnFormClosing(e);
+            int saved;
+            if (!Int32.TryParse(ConfigStore.Get("lastRequestedMode", "-1"), out saved) ||
+                saved < 0 || saved > 2)
+                saved = -1;
+            SelectMode(saved);
+            mode.Text = ModeName(saved == 0   ? "balanced"
+                                 : saved == 1 ? "performance"
+                                 : saved == 2 ? "comfort"
+                                              : "unknown");
+            mode.ForeColor = saved < 0 ? Color.DarkOrange : SystemColors.ControlText;
         }
 
         async void Mode(byte value)
         {
-            if (currentMode == value || !BeginHardwareOperation())
+            if (!BeginHardwareOperation())
                 return;
             try
             {
@@ -1269,26 +1065,25 @@ namespace OmenLiteControl
             msg.ForeColor = SystemColors.ControlText;
             msg.Text = T("正在切换模式…", "Switching mode…");
             await Task.Run(() => HpBios.SetMode(value));
+            // Persist only after the WMI request returned success. Invalidate stale state on a save
+            // failure.
             try
             {
-                PerformanceState state = await Task.Run(() => HardwareStatus.WaitForMode(value));
-                ShowState(state);
-                if (state.Mode == value)
-                    Ok(T("BIOS 指令已接受，EC 回读确认：",
-                         "BIOS request accepted; EC confirmed: ") +
-                       ModeName(state.Id));
-                else
-                    Warn(T("BIOS 指令已接受，但 EC 当前状态与请求不一致：",
-                           "BIOS request accepted, but EC differs from requested mode: ") +
-                         ModeName(state.Id));
+                ConfigStore.Set("lastRequestedMode", value.ToString());
             }
             catch (Exception e)
             {
-                ShowReadFailure(e);
-                Warn(T("BIOS 指令已接受；无法确认实际状态：",
-                       "BIOS request accepted; actual state could not be confirmed: ") +
+                SelectMode(-1);
+                mode.Text = T("记录未保存", "Record not saved");
+                Warn(T("BIOS 已接受请求，但记录保存失败：",
+                       "BIOS accepted the request, but saving failed: ") +
                      e.Message);
+                return;
             }
+            ShowRecordedMode();
+            Ok(T("BIOS 已接受请求，模式记录已保存。",
+                 "BIOS accepted the request; mode record saved."));
+            lastLightingMode = -1;
             await ApplyModeLighting();
         }
 
@@ -1557,13 +1352,18 @@ namespace OmenLiteControl
                 }
                 try
                 {
-                    var state = HardwareStatus.Read();
-                    File.WriteAllText(output,
-                                      "mode=" + state.Id + Environment.NewLine + state.Raw +
-                                          Environment.NewLine +
-                                          "read_at_utc=" + state.ReadAtUtc.ToString("o"),
-                                      Encoding.UTF8);
-                    return state.Mode < 0 ? 2 : 0;
+                    int value;
+                    if (!Int32.TryParse(ConfigStore.Get("lastRequestedMode", "-1"), out value) ||
+                        value < 0 || value > 2)
+                        value = -1;
+                    string name = value == 0   ? "balanced"
+                                  : value == 1 ? "performance"
+                                  : value == 2 ? "comfort"
+                                               : "unknown";
+                    File.WriteAllText(
+                        output, "source=last-request-record" + Environment.NewLine + "mode=" + name,
+                        Encoding.UTF8);
+                    return value < 0 ? 2 : 0;
                 }
                 catch (Exception e)
                 {
