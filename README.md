@@ -4,7 +4,7 @@
 
 For **HP OMEN 15 (2018), i7-8750H + GTX 1060, SSID 84DB / BIOS F.19**. Only tested on this configuration.
 
-> Earlier versions may cause sleep or wake problems. Upgrade to v0.7.0.
+> Versions before v0.7.0 may cause sleep or wake problems. Upgrade to v0.7.1.
 
 <img src="assets/ui-en-v0.7.0.png" alt="OMEN-Lite-Control interface" width="75%">
 

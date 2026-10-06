@@ -14,17 +14,27 @@ namespace OmenLiteControl
                                                     Color.FromArgb(46, 151, 230),
                                                     Color.FromArgb(128, 140, 156) };
         readonly Icon[] icons = new Icon[4];
+        readonly Icon[] smallIcons = new Icon[4];
 
         internal ModeIcons()
         {
             for (int i = 0; i < icons.Length; i++)
+            {
                 using (var stream = new MemoryStream(CreateData(Colors[i]))) using (
                     var source = new Icon(stream)) icons[i] = (Icon)source.Clone();
+                smallIcons[i] =
+                    new Icon(icons[i], System.Windows.Forms.SystemInformation.SmallIconSize);
+            }
         }
 
         internal Icon ForMode(int mode)
         {
             return icons[mode >= 0 && mode <= 2 ? mode : 3];
+        }
+
+        internal Icon SmallForMode(int mode)
+        {
+            return smallIcons[mode >= 0 && mode <= 2 ? mode : 3];
         }
 
         internal static byte[] CreateData(Color color)
@@ -120,6 +130,9 @@ namespace OmenLiteControl
 
         public void Dispose()
         {
+            foreach (var icon in smallIcons)
+                if (icon != null)
+                    icon.Dispose();
             foreach (var icon in icons)
                 if (icon != null)
                     icon.Dispose();

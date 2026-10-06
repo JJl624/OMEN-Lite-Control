@@ -45,15 +45,11 @@ jobs:
           name: OMEN Lite Control ${{ github.ref_name }}
           prerelease: false
           body: |
-            旧版本可能导致睡眠或唤醒异常，建议升级至 v0.7.0。
+            - 修复灯光联动切换模式后，窗口和任务栏图标可能未更新的问题。
+            - 恢复窗口时同步模式图标。
 
-            - 移除硬件模式回读，改为保存最后成功请求的模式。
-            - 精简界面与发行包。
-
-            Earlier versions may cause sleep or wake problems. Upgrade to v0.7.0.
-
-            - Replace hardware mode readback with the last successful mode request.
-            - Simplify the interface and portable package.
+            - Fix stale window and taskbar icons when switching modes with linked lighting.
+            - Resync mode icons when restoring the window.
           files: |
             dist/*.zip
             dist/SHA256SUMS.txt

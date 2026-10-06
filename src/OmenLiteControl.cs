@@ -13,9 +13,9 @@ using System.Windows.Forms;
 
 [assembly:AssemblyTitle("OMEN Lite Control")]
 [assembly:AssemblyDescription("Lightweight controls for HP OMEN 15-dc0xxx (84DB)")]
-[assembly:AssemblyVersion("0.7.0.0")]
-[assembly:AssemblyFileVersion("0.7.0.0")]
-[assembly:AssemblyInformationalVersion("0.7.0")]
+[assembly:AssemblyVersion("0.7.1.0")]
+[assembly:AssemblyFileVersion("0.7.1.0")]
+[assembly:AssemblyInformationalVersion("0.7.1")]
 namespace OmenLiteControl
 {
     static class HpBios
@@ -452,6 +452,29 @@ namespace OmenLiteControl
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         static extern bool RedrawWindow(IntPtr window, IntPtr rect, IntPtr region, uint flags);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+
+        void SyncModeIcon()
+        {
+            if (modeIcons == null || IsDisposed || Disposing)
+                return;
+            Icon = modeIcons.ForMode(currentMode);
+            if (!IsHandleCreated)
+                return;
+            // Reapply native icons even when Form.Icon still references the same cached icon.
+            SendMessage(Handle, 0x0080, IntPtr.Zero, modeIcons.SmallForMode(currentMode).Handle);
+            SendMessage(Handle, 0x0080, new IntPtr(1), Icon.Handle);
+            if (Visible && WindowState != FormWindowState.Minimized)
+                RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, 0x0401); // Frame, no erase.
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            SyncModeIcon();
+        }
+
         bool wasMinimized;
 
         void SaveTraySetting()
@@ -497,6 +520,8 @@ namespace OmenLiteControl
             base.OnResize(e);
             bool restoring = wasMinimized && WindowState != FormWindowState.Minimized;
             wasMinimized = WindowState == FormWindowState.Minimized;
+            if (restoring)
+                SyncModeIcon();
             if (restoring && IsHandleCreated && Visible)
                 RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero,
                              0x0585); // Repaint frame + children now.
@@ -525,6 +550,7 @@ namespace OmenLiteControl
                 restoringFromTray = false;
             }
             trayIcon.Visible = false;
+            SyncModeIcon();
             Activate();
             RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, 0x0585);
         }
@@ -708,8 +734,7 @@ namespace OmenLiteControl
         void SelectMode(int value)
         {
             currentMode = value;
-            if (!IsDisposed && !Disposing)
-                Icon = modeIcons.ForMode(value);
+            SyncModeIcon();
             def.Checked = value == 0;
             perf.Checked = value == 1;
             cool.Checked = value == 2;
@@ -754,8 +779,8 @@ namespace OmenLiteControl
                 PresetStore.Save(presets, names, lightingLink.Checked);
                 lastLightingMode = -1;
                 ReloadLightingSettings();
-                Ok(T("灯光联动设置已保存，下次模式读取时生效。",
-                     "Lighting link saved; takes effect on the next mode read."));
+                Ok(T("灯光联动设置已保存，下次切换模式时生效。",
+                     "Lighting link saved; takes effect on the next mode change."));
             }
             catch (Exception e)
             {
@@ -1084,7 +1109,14 @@ namespace OmenLiteControl
             Ok(T("BIOS 已接受请求，模式记录已保存。",
                  "BIOS accepted the request; mode record saved."));
             lastLightingMode = -1;
-            await ApplyModeLighting();
+            try
+            {
+                await ApplyModeLighting();
+            }
+            finally
+            {
+                SyncModeIcon();
+            }
         }
 
         void PaintZone(int i)
